@@ -162,7 +162,13 @@ Redesigned:
 
     Kit/          what the redesign builds on (SGRKit.h lists it), the flags it forces (SGRedesign.h, SGRGlassDesign.x for
                   Spotify's own glass design), its repaint hook (SGRRepaint.x), soft top edge, AMOLED black (always on,
-                  SGRAmoled.x) and its own accent colour (SGRAccent.x, stored apart from the native look's)
+                  SGRAmoled.x) and its own accent colour (SGRAccent.x, stored apart from the native look's); and
+                  the curtain the playlist, album and artist pages come in behind (SGRReveal.h): black over the
+                  whole page from its first pass until the picture, the field's colour, the header with Play and
+                  the first track with its text are all in, and then the page fades in from behind it in one
+                  go -- the field brightening into the page's colour, the rest fading in where it is, nothing
+                  moving -- so it no longer arrives a piece at a time; after 1.2 s it shows whatever is missing, and
+                  the back button, being the system's navigation bar, is there throughout
     Navbar/       the glass tab bar (TabBar.x) over its own composition (Navbar.x, NavbarLayout.m) and editor, with the fade to
                   black over the pages behind the bars that Spotify's bar drew; the glass search field.
                   Spotify is made to leave the glass bar its height where its own bar is shorter (a phone with a home button,

@@ -87,6 +87,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
     field.bleed = kBleed;
     objc_setAssociatedObject(page, &kFieldKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakPage = page;
+    [field whenColored:^{ SGRRevealMark(weakPage, SGRRevealColor); }];
     SGLog(@"redesign album: field on the page %.0fx%.0f", page.bounds.size.width, page.bounds.size.height);
     return field;
 }
@@ -99,6 +101,10 @@ static SGRArtworkField *fieldIn(UIView *page) {
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen; an album
     // pushed over this one sets itself from its own pass, and this one sets itself again coming back.
     sgr_albumRoot = page;
+    // Behind a curtain from the first pass (Kit/SGRReveal.h), which the header claims once it knows the page for
+    // an album's (AlbumHeader.x). An episode page is this template too and never is, so its curtain lifts
+    // unclaimed a moment later.
+    SGRRevealHold(page, 0);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];

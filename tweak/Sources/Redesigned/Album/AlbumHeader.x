@@ -204,6 +204,7 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
     _picture.image = image;
     // The page's field takes its colour from the same picture.
     SGRAlbumSetArtwork(self, image);
+    SGRRevealMark(SGRAlbumPageOf(self), SGRRevealPicture);
     static BOOL logged;
     if (late && !logged) {
         logged = YES;
@@ -311,17 +312,17 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     UIView *title = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.TitleRow", &kTitleKey);
     UIView *parent = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ParentRow", &kParentKey);
     UIView *metadata = SGRFindByIdentifier(header, @"Components.UI.MetadataRow", &kMetaKey);
-    NSString *length = metadataText(metadata);
-    [info showTitle:firstText(title) creator:firstText(parent) ?: trimmed(parent.accessibilityLabel)
-             length:length about:nil];
+    NSString *name = firstText(title), *length = metadataText(metadata);
+    [info showTitle:name creator:firstText(parent) ?: trimmed(parent.accessibilityLabel) length:length about:nil];
     // The kind and the date are cells the metadata row's collection view makes on its own pass, after the
     // header's, and nothing lays the header out again when they arrive; the collection is Spotify's own Swift
-    // class, which cannot be watched. So an empty row is read again a moment later, a few times at most.
+    // class, which cannot be watched. So an empty row is read again a moment later, for as long as the page's
+    // curtain waits at most (Kit/SGRReveal.h): the page is shown once they are in, so soon is better.
     NSInteger tries = [objc_getAssociatedObject(header, &kRetryKey) integerValue];
-    if (!length && metadata && tries < 6) {
+    if (!length && metadata && tries < 12) {
         objc_setAssociatedObject(header, &kRetryKey, @(tries + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         __weak UIView *weakHeader = header, *weakPage = page;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             if (weakHeader && weakPage) applyHeader(weakHeader, weakPage);
         });
     }
@@ -343,6 +344,8 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     // Only what the two floating buttons draw goes: a concealed layer still sends the actions the row fires.
     if (play) conceal(wrapperFor(play, page));
     if (shuffle) conceal(wrapperFor(shuffle, page));
+    // The kind and the date are waited for too: arriving late they pushed the title up by a line.
+    if (name && play && length) SGRRevealMark(page, SGRRevealHeader);
 
     // Add arrives after the header has laid out on an album opened for the first time (the next time its state
     // is cached and it is there from the start), in a row that lays nothing else out (Native/Album/Album.x): the
@@ -426,6 +429,8 @@ static void applyWash(UIView *page) {
 
 static void applyHeader(UIView *header, UIView *page) {
     if (!SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.TitleRow", &kTitleKey)) return;
+    // An album's page: its curtain waits for all of it (AlbumField.x put it up).
+    SGRRevealHold(page, SGRRevealPage);
     applyWash(page);
     SGRHeaderInfo *info = applyInfo(header, page);
 

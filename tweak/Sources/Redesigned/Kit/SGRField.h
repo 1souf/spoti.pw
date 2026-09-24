@@ -45,4 +45,8 @@ extern NSNotificationName const SGRFieldColorDidChangeNotification;
 // as the last call is a no-op, and a result that lands after a newer call is dropped. nil keeps
 // what the field shows.
 - (void)setArtwork:(UIImage *)image identity:(NSString *)identity animated:(BOOL)animated;
+// `colored` once, as soon as the field shows a colour of the page's own -- read from the artwork, or the
+// page's preferred one -- rather than the neutral it starts with; at once if it already does. For a page
+// that waits to be shown until it has its colour (SGRReveal.h).
+- (void)whenColored:(void (^)(void))colored;
 @end
