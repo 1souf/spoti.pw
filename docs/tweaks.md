@@ -110,16 +110,26 @@ Shared:
                   shape the key wants (Apple's 3:4 cover needs none) and kept under a 120 MB cap. Checked on
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
+    Audio/        the mixer connection and RemoteIO render notify owned once (SGAudioPipeline.x): fixed processor slots
+                  run speed and pitch, audio effects, then music haptics. Graph changes and disposal exclude active pulls;
+                  the render thread never waits for them. Unsupported formats retain Spotify's connection. The PCM
+                  packet queue is bounded and generation-stamped. Sing's source read-ahead reads guarded queue metadata
+                  for the verified Spotify binary; PCM still comes through its AudioUnit. Boundary tests are in harness/audio/ and harness/sing/
+    Sing/         the local Core AI / Core ML separator, source-domain audio adapter, worker and player lifecycle. Core ML
+                  can use the GPU in the foreground and its warm CPU model in the background. The audible
+                  clock follows emitted source samples while delayed audio drains. Model loading overlaps source capture;
+                  verified continuous next-track PCM keeps its worker and reserve across a natural transition.
+                  Redesigned/Lyrics owns the
+                  Now Playing microphone control; the model is an optional local Sing.bundle (harness/sing/)
     Player/       the player's open and close announced (PlayerEvents.x), what the player is doing read through
                   one hook for every feature that wants it (PlayerState.x), the lock screen widget's flags, and in the
                   more button's menu Speed and pitch: both done to Spotify's audio by Apple's time and pitch unit, put
-                  between its mixer and its RemoteIO unit by taking over the connection Spotify makes between them
+                  between its mixer and its RemoteIO unit through Audio/SGAudioPipeline's connection
                   (SpeedPitchMenu.x, SpeedPitch.x, SGTimePitch.m). The block goes into Spotify's own context menu sheet
                   and is drawn from its own measures, not the Kit's, so it sits there under either look. Tested on the
                   Mac against harness/pitch/ and in the simulator against harness/speed/ and harness/menu/
-    AudioEffects/ the audio effects on Spotify's sound (AudioEffects.h has the keys and the page's calls): Spotify's
-                  import of AudioOutputUnitStart is rebound, as Music Haptics does, and a render notify on its RemoteIO
-                  unit runs each finished buffer through the mod's own engine, re-blocked to 1024 frames one block late,
+    AudioEffects/ the audio effects on Spotify's sound (AudioEffects.h has the keys and the page's calls): Audio/SGAudioPipeline's
+                  ordered output processor runs each finished buffer through the mod's own engine, re-blocked to 1024 frames one block late,
                   in place (AudioEffects.x, SGDSPEngine.m). The buffers are in the unit's output format, the
                   hardware's, not the client format Spotify sets. The effects are the SGDSP*.m files, on Accelerate,
                   Apple's Reverb2 unit, libbs2b and EEL2 (vendor/audio). Settings apply as they change, on a queue of
@@ -129,8 +139,8 @@ Shared:
     Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
                   playing bar's controls, the scrubber's tenths and ends, cover swipes, gestures and the lyrics page's tap to
                   seek, at the strength set for them (ControlHaptics.x, SGFeedback.m); and Music Haptics, Core Haptics
-                  playing along with the song: Spotify's import of AudioOutputUnitStart is rebound so its RemoteIO output
-                  unit gets a render notify, the samples, in the unit's output format (the hardware's), go through a drum
+                  playing along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;
+                  in the unit's output format (the hardware's), they go through a drum
                   and bass analyzer on the render thread (SGMusicAnalyzer.m, plain C), and a thread of its own schedules
                   the taps and the rumble for when the sound is heard, at their strength and leaving out what Follows
                   leaves out (MusicHaptics.x). Everything applies at once; nothing plays while Spotify is not the active
@@ -187,6 +197,10 @@ Redesigned:
                   sheet, and a sheet with no rows within 4 s is shown as it is. It opens on the rows the last
                   menu had, kept across launches, and moves to Spotify's as they come in, a tap meanwhile held
                   until they do. Always on in the redesign. Tested in the simulator against harness/playermenu/
+                  With Sing on (Lyrics > Sing), its microphone (Redesigned/Lyrics/SGRSingControl.m) sits in the
+                  lyrics' bottom trailing corner, opposite their glass button, and goes down with the lines when the
+                  controls go; while it is open, preparing or explaining itself the controls stay, and a touch on it
+                  does not bring them back
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where after four seconds untouched while
                   the song plays the controls fade out and the lines take the whole player, until a touch or a pause
