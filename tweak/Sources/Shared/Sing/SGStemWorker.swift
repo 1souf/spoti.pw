@@ -185,6 +185,19 @@ public func sgStemArchitectureMatches(_ architecture: UnsafePointer<CChar>?) -> 
     return 0
 }
 
+@_cdecl("SGStemArchitectureName")
+public func sgStemArchitectureName(_ name: UnsafeMutablePointer<CChar>?, _ size: Int32) -> Int32 {
+    #if canImport(CoreAI)
+    if #available(iOS 27.0, macOS 27.0, *), let name {
+        let utf8 = Array(AIModel.deviceArchitectureName.utf8CString)
+        guard utf8.count <= Int(size) else { return 0 }
+        utf8.withUnsafeBufferPointer { name.update(from: $0.baseAddress!, count: utf8.count) }
+        return 1
+    }
+    #endif
+    return 0
+}
+
 @_cdecl("SGStemWorkerPurge")
 public func sgStemWorkerPurge() {
     if #available(iOS 27.0, macOS 27.0, *) {

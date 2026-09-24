@@ -48,6 +48,7 @@ double SGPlayerAudioLatency(void) { return 0; }
 double SGPlayerSpeed(void) { return 1; }
 BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
 int32_t SGStemArchitectureMatches(const char *name) { return 1; }
+int32_t SGStemArchitectureName(char *name, int32_t size) { return snprintf(name, (size_t)size, "test") < size; }
 void SGStemWorkerPurge(void) { purges++; }
 void *SGStemWorkerStart(void *context, const char *path, const char *hashes, uint32_t hopFrames, SGStemRead read, SGStemWrite write, SGStemStatus status) {
     assert(starts < 24); unsigned n = starts++;

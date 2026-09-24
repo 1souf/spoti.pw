@@ -105,10 +105,22 @@ static void workerStatus(void *context, int32_t status) {
     _window = [manifest[@"WindowFrames"] unsignedIntValue];
     _model = [bundle pathForResource:@"separator" ofType:_usesCoreML ? @"mlmodelc" : @"aimodelc"];
     _hashes = [bundle pathForResource:@"hashes" ofType:@"json"];
-    if ((backend && !_usesCoreML && ![backend isEqualToString:@"CoreAI"]) || !architecture.length ||
-        !SGStemArchitectureMatches(architecture.UTF8String) || !_model || !_hashes || _window != 88200) {
+    char name[64];
+    NSString *device = SGStemArchitectureName(name, sizeof name) ? @(name) : nil;
+    SGLog(@"Sing: this iPhone's Core AI architecture is %@, the build's voice model is for %@",
+          device ?: @"unknown (below iOS 27)", manifest ? architecture : @"nothing (no Sing.bundle)");
+    // Each check says what it found, so the alert names the one thing missing. A release has no model:
+    // it comes from SING_MODEL_BUNDLE at build time (harness/sing/README.md).
+    NSString *missing = !device ? @"Sing requires iOS 27."
+        : !manifest ? @"This build doesn't include Sing's voice model."
+        : !architecture.length || (backend && !_usesCoreML && ![backend isEqualToString:@"CoreAI"]) || !_model || !_hashes || _window != 88200
+            ? @"The voice model in this build is incomplete."
+        : !SGStemArchitectureMatches(architecture.UTF8String)
+            ? [NSString stringWithFormat:@"The voice model in this build is for %@, and this iPhone needs one for %@.", architecture, device]
+        : nil;
+    if (missing) {
         _state = SGSingUnavailable;
-        _explanation = @"Sing requires iOS 27, supported hardware, and the matching local voice model in this build.";
+        _explanation = missing;
     }
     SGAddPlayerStateObserver(self);
     NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;

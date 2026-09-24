@@ -16,5 +16,8 @@ void *SGStemWorkerStart(void *context, const char *modelPath, const char *hashes
 void SGStemWorkerCancel(void *handle, int32_t unload);
 
 int32_t SGStemArchitectureMatches(const char *architecture);
+// This device's Core AI architecture name (what package_model.py's --architecture wants) into `name`,
+// 0 below iOS 27 or when it does not fit.
+int32_t SGStemArchitectureName(char *name, int32_t size);
 
 void SGStemWorkerPurge(void);
