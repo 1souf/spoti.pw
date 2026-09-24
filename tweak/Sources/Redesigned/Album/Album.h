@@ -32,6 +32,3 @@ UIView *SGRAlbumPageOf(UIView *view);
 UIColor *SGRAlbumFieldColor(UIView *view);
 // The cover of the page `view` is on, for its field to take its colour from. The same image again is a no-op.
 void SGRAlbumSetArtwork(UIView *view, UIImage *image);
-// The colour Spotify picked for the album, read off the wash it paints behind the header: the field takes it
-// over the one read from the cover's bottom edge. The same colour again is a no-op.
-void SGRAlbumSetSpotifyColor(UIView *view, UIColor *color);

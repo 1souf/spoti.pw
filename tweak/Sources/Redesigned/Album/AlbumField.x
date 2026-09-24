@@ -14,11 +14,7 @@
 // repaint hook while sgr_albumRoot is this page, and by the list's own pass below, which paints itself
 // rather than through a layer the repaint hook would hear about.
 //
-// The colour is Spotify's own for the album, read off the wash it paints behind the header, which
-// AlbumHeader.x hands over as it conceals it. Spotify reads the whole cover; the Kit's palette reads its
-// bottom edge, and a scanned cover's bottom edge is the scanner's pale border, which turned the field grey
-// where Spotify had it blue (device, 2026-09-18). The colour read from the cover is what shows until
-// Spotify's arrives, or for good if it never does, and before either the field is the neutral one.
+// The colour is the cover's main colour (Kit/SGRPalette.h); before it is read the field is the neutral one.
 //
 // The page is the album's by its identifier, which is how Native/Album/Album.x has told it apart since it
 // shipped: the artist page is TemplateKit's TemplateView instead. A podcast's episode page is built from
@@ -75,10 +71,6 @@ UIColor *SGRAlbumFieldColor(UIView *view) {
 
 void SGRAlbumSetArtwork(UIView *view, UIImage *image) {
     if (image) [fieldOn(view) setArtwork:image identity:nil animated:YES];
-}
-
-void SGRAlbumSetSpotifyColor(UIView *view, UIColor *color) {
-    if (color) [fieldOn(view) setPreferredColor:color];
 }
 
 static SGRArtworkField *fieldIn(UIView *page) {
