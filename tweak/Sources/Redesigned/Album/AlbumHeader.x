@@ -24,8 +24,12 @@
 // Play and shuffle are not in the header. The album page floats them over the page, pinned to the top
 // trailing corner outside the scroll (01.txt:1431, :1436): they are concealed where they are, and the row
 // draws them and fires them all the same.
+#import <AVFoundation/AVFoundation.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Shared/LockScreenArtwork/SGAppleArtwork.h"
+#import "Shared/LockScreenArtwork/SGArtworkFile.h"
+#import "Shared/LockScreenArtwork/SGCanvas.h"
 #import "Album.h"
 
 // How much of the cover's height the dissolve into the field covers, and the scrim over the top of it that
@@ -119,11 +123,20 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 // The cover in Spotify's artwork view, and every cover it puts there afterwards: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
 - (void)followCover:(UIImageView *)source;
+// Apple Music's square animated cover over the picture, where it has one. The same album again is a no-op.
+- (void)findMotionOf:(NSString *)album by:(NSString *)artist;
 @end
+
+static char kReadyContext;
 
 @implementation SGRAlbumHero {
     CAGradientLayer *_scrim, *_dissolve;
     __weak UIImageView *_cover;
+    NSString *_motionFor;
+    NSURLSessionTask *_fetch;
+    AVQueuePlayer *_player;
+    AVPlayerLooper *_looper;
+    AVPlayerLayer *_motion;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -155,6 +168,9 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
+    [_fetch cancel];
+    [_motion removeObserver:self forKeyPath:@"readyForDisplay" context:&kReadyContext];
+    [_player pause];
 }
 
 - (void)sgr_fieldColorDidChange {
@@ -183,7 +199,92 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
     CGFloat fade = round(bounds.size.height * kDissolve);
     _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
+    _motion.frame = bounds;
     [CATransaction commit];
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    [self updateMotion];
+}
+
+- (void)findMotionOf:(NSString *)album by:(NSString *)artist {
+    if (!album.length || !artist.length || !SGFlag(SGRKeyAnimatedCovers, YES)) return;
+    // Not even looked up while it could not move: the clip is megabytes.
+    if (SGRReduceMotion() || NSProcessInfo.processInfo.lowPowerModeEnabled) return;
+    NSString *wanted = [NSString stringWithFormat:@"%@\n%@", artist, album];
+    if ([_motionFor isEqualToString:wanted]) return;
+    _motionFor = wanted;
+    __weak SGRAlbumHero *weakSelf = self;
+    SGAppleArtworkFind(artist, album, NO, ^(SGCanvas *canvas, NSString *note) {
+        SGRAlbumHero *hero = weakSelf;
+        if (!hero || ![hero->_motionFor isEqualToString:wanted]) return;
+        if (!canvas) {
+            SGLog(@"redesign album: no animated cover for \"%@\": %@", album, note);
+            return;
+        }
+        hero->_fetch = SGArtworkFetchAside(canvas.identifier, canvas.address, ^(NSURL *file, NSString *fetched) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                SGRAlbumHero *owner = weakSelf;
+                if (!owner || ![owner->_motionFor isEqualToString:wanted]) return;
+                owner->_fetch = nil;
+                SGLog(@"redesign album: animated cover for \"%@\", %@", album, fetched);
+                if (file) [owner playMotion:file];
+            });
+        });
+    });
+}
+
+// Muted, never on AirPlay, and letting the screen lock: a picture, not a video.
+- (void)playMotion:(NSURL *)file {
+    if (_motion) return;
+    AVQueuePlayer *player = [AVQueuePlayer new];
+    player.muted = YES;
+    player.allowsExternalPlayback = NO;
+    player.preventsDisplaySleepDuringVideoPlayback = NO;
+    _looper = [AVPlayerLooper playerLooperWithPlayer:player templateItem:[AVPlayerItem playerItemWithURL:file]];
+    _player = player;
+    _motion = [AVPlayerLayer playerLayerWithPlayer:player];
+    _motion.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    _motion.zPosition = 0.5;
+    _motion.opacity = 0;
+    _motion.frame = self.bounds;
+    [self.layer addSublayer:_motion];
+    [_motion addObserver:self forKeyPath:@"readyForDisplay" options:0 context:&kReadyContext];
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
+                                      NSProcessInfoPowerStateDidChangeNotification, UIAccessibilityReduceMotionStatusDidChangeNotification]) {
+        [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
+    }
+    [self updateMotion];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context != &kReadyContext) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self->_motion.readyForDisplay || self->_motion.opacity > 0) return;
+        [CATransaction begin];
+        [CATransaction setAnimationDuration:SGRCrossfade];
+        self->_motion.opacity = 1;
+        [CATransaction commit];
+    });
+}
+
+// The power state is reported off the main thread.
+- (void)updateMotionSoon {
+    dispatch_async(dispatch_get_main_queue(), ^{ [self updateMotion]; });
+}
+
+// Only while the page is on screen and in front: a page under another one, or a tab away, holds still.
+- (void)updateMotion {
+    if (!_player) return;
+    BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+    BOOL moving = self.window && front && !SGRReduceMotion() && !NSProcessInfo.processInfo.lowPowerModeEnabled;
+    if (moving && _player.rate == 0) [_player play];
+    else if (!moving && _player.rate != 0) [_player pause];
 }
 
 - (void)followCover:(UIImageView *)source {
@@ -313,7 +414,9 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     UIView *parent = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ParentRow", &kParentKey);
     UIView *metadata = SGRFindByIdentifier(header, @"Components.UI.MetadataRow", &kMetaKey);
     NSString *name = firstText(title), *length = metadataText(metadata);
-    [info showTitle:name creator:firstText(parent) ?: trimmed(parent.accessibilityLabel) length:length about:nil];
+    NSString *artist = firstText(parent) ?: trimmed(parent.accessibilityLabel);
+    [info showTitle:name creator:artist length:length about:nil];
+    [(SGRAlbumHero *)objc_getAssociatedObject(header, &kHeroKey) findMotionOf:name by:artist];
     // The kind and the date are cells the metadata row's collection view makes on its own pass, after the
     // header's, and nothing lays the header out again when they arrive; the collection is Spotify's own Swift
     // class, which cannot be watched. So an empty row is read again a moment later, for as long as the page's

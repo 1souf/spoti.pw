@@ -1,6 +1,6 @@
 // Settings: a Mod Settings row at the end of Spotify's settings list opens the mod's own page: the
 // Appearance card with Redesigned UI, then a page per part of Spotify, each holding what that part
-// offers in the stored look (App/Pages.m: Navbar, Player, and Home & Library for the native look), Audio
+// offers in the stored look (App/Pages.m: Navbar, Player, Home & Library for the native look, Albums for the redesign), Audio
 // effects (Shared/AudioEffects, in either look and applying straight away), Privacy & clutter
 // and Labs, All flags, a searchable list of every flag with an override per flag, and Mod, the
 // build, its updates and links. The same row leads the side drawer's list (trees/test6.txt), above
@@ -17,6 +17,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Settings/SGModPage.h"
 #import "Native/Home/Home.h"
+#import "Redesigned/Album/Album.h"
 #import "Shared/Privacy/Privacy.h"
 #import "Shared/Flags/Flags.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
@@ -48,8 +49,8 @@ static UIViewController *modSettingsPage(void) {
     // The audio effects work on the sound, so both looks have them, with what they are doing beside the chevron.
     SGModRow *audioEffects = pageRow(@"Audio effects", @"slider.vertical.3", ^UIViewController *{ return SGDSPSettingsPage(); });
     audioEffects.value = ^NSString *{ return SGDSPSummary(); };
-    // Home & Library holds only the native look's switches, so the redesign has no such page; the
-    // Live Activity works under both, and only where ActivityKit's card does.
+    // Home & Library holds only the native look's switches, and Albums only the redesign's; the Live
+    // Activity works under both, and only where ActivityKit's card does.
     NSMutableArray<SGModRow *> *parts = [NSMutableArray arrayWithArray:@[
         pageRow(@"Navbar", @"dock.rectangle", ^UIViewController *{ return SGNavbarPage(); }),
         pageRow(@"Player", @"play.circle", ^UIViewController *{ return SGPlayerSettingsPage(); }),
@@ -60,7 +61,8 @@ static UIViewController *modSettingsPage(void) {
         liveActivity.value = ^NSString *{ return SGLiveActivitySummary(); };
         [parts addObject:liveActivity];
     }
-    if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
+    if (SGRedesignedUIStored()) [parts addObject:pageRow(@"Albums", @"square.stack", ^UIViewController *{ return SGRAlbumSettingsPage(); })];
+    else [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
     [sections addObjectsFromArray:@[
         SGAppearanceSection(),
         SGSection(nil, parts),
