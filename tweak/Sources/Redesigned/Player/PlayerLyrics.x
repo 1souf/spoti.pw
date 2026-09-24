@@ -605,6 +605,22 @@ static void replace(void) {
 
 #pragma mark - the track changing under them
 
+// Lyrics arrive a moment after the track does: the glyph is asked again while they would be coming, and
+// the lines already up wait out the same grace before they go. Not in the background, where Spotify may
+// not ask for lyrics until the app is back, so coming back starts it over.
+static void awaitLyrics(void) {
+    for (NSNumber *delay in @[@1, @(kLyricsGrace)]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+            SGRPlayerLyricsChanged();
+            if (sg_open && delay.doubleValue >= kLyricsGrace && !SGRPlayerLyricsAvailable()) {
+                SGLog(@"redesign player: no lyrics for the track that came on, the cover is back");
+                setOpen(NO, YES);
+            }
+        });
+    }
+}
+
 @interface SGRPlayerLyricsWatcher : NSObject <SGPlayerStateObserver>
 @end
 
@@ -627,17 +643,7 @@ static void replace(void) {
     NSString *track = SGURIString(state.track.URI);
     if (!track || [track isEqualToString:_track]) return;
     _track = track;
-    // Lyrics arrive a moment after the track does, and nothing announces them: the glyph is asked again
-    // while they would be coming, and the lines already up wait out the same grace before they go.
-    for (NSNumber *delay in @[@1, @(kLyricsGrace)]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SGRPlayerLyricsChanged();
-            if (sg_open && delay.doubleValue >= kLyricsGrace && !SGRPlayerLyricsAvailable()) {
-                SGLog(@"redesign player: no lyrics for the track that came on, the cover is back");
-                setOpen(NO, YES);
-            }
-        });
-    }
+    awaitLyrics();
 }
 
 @end
@@ -649,6 +655,16 @@ static SGRPlayerLyricsWatcher *sg_watcher;
     %init;
     sg_watcher = [SGRPlayerLyricsWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
+    [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        SGRPlayerLyricsChanged();
+    }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+                                                     queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        // Spotify's own request may have been answered with nothing while the app was away.
+        SGKaraokeRequestLyrics(SGKaraokePlayingTrack());
+        SGRPlayerLyricsChanged();
+        awaitLyrics();
+    }];
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
                                                      queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         if (!sg_aloneTimer) scheduleAlone();   // the wait gave up while the app was away
