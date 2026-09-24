@@ -391,13 +391,14 @@ static void syncBar(UIView *stockBar) {
         [host addSubview:bar];
         objc_setAssociatedObject(stockBar, &kHostKey, host, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    bar.tintColor = SGRAccent();
+    UIColor *accent = SGRAccent();
+    if (![bar.tintColor isEqual:accent]) bar.tintColor = accent;
     UIView *host = objc_getAssociatedObject(stockBar, &kHostKey);
 
     for (UIView *sub in stockBar.subviews) {
         if (sub == host) continue;
-        sub.alpha = 0;
-        sub.userInteractionEnabled = NO;
+        if (sub.alpha != 0) sub.alpha = 0;
+        if (sub.userInteractionEnabled) sub.userInteractionEnabled = NO;
     }
     stockBar.superview.layer.backgroundColor = NULL;
 
@@ -463,13 +464,20 @@ static UIView *tabBarOf(UIView *item) {
     return nil;
 }
 
+// Set while the bar lays its items out itself, so each item's pass leaves the work to the bar's one.
+static BOOL sg_barPass, sg_itemsLaidOut;
+
 %hook _TtC23NavigationUI_TabBarImpl10TabBarView
 - (void)layoutSubviews {
     %orig;
     SGRComposeTabBar((UIView *)self);
+    sg_barPass = YES;
+    sg_itemsLaidOut = NO;
     for (UIView *sub in ((UIView *)self).subviews) {
         if (![sub isKindOfClass:SGRTabBarHost.class]) [sub layoutIfNeeded];
     }
+    sg_barPass = NO;
+    if (sg_itemsLaidOut) SGRComposeTabBar((UIView *)self);
     holdHome((UIView *)self);
     syncBar((UIView *)self);
     SGRLogTabBarRow((UIView *)self);
@@ -478,6 +486,10 @@ static UIView *tabBarOf(UIView *item) {
 
 // The bar's own pass runs before Spotify has filled the row; the items lay out as they arrive.
 static void itemDidLayOut(UIView *item) {
+    if (sg_barPass) {
+        sg_itemsLaidOut = YES;
+        return;
+    }
     UIView *bar = tabBarOf(item);
     if (!bar) return;
     SGRComposeTabBar(bar);
