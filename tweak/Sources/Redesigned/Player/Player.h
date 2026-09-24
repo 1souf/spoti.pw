@@ -32,10 +32,6 @@
 // The artwork's colours moving behind the player (on until switched off), or the blurred artwork held
 // still; the row is on the Now playing page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m).
 #define SGRKeyPlayerMotion @"spotifyglass.redesign.player.movingBackground"
-// The ⋯ opening the Music app style menu (on until switched off) rather than Spotify's sheet; the row is on
-// the Now playing page too.
-#define SGRKeyPlayerMenu @"spotifyglass.redesign.player.musicMenu"
-
 #pragma mark - the ⋯ menu (PlayerMenu.x)
 
 // Marks a sheet opened soon after a tap on `button`, the player's ⋯, as the one the menu takes over, and

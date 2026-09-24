@@ -13,7 +13,9 @@
 // Scenarios, each starting with a tap on the ⋯ at 1 s: hold (nothing more), more (opens More at 3 s),
 // speed (opens Speed and pitch at 3 s), tile (Add to playlist at 3 s), share (Share at 3 s: Spotify's page
 // is pushed and its sheet shown), lyrics (More, then Lyrics: the row reads On), outside (a tap beside the
-// card at 3 s). `loading` hands the sheet its rows 1.5 s after it is up; `stuck` never does.
+// card at 3 s), pending (with `loading`: Add to playlist tapped before Spotify's rows are in, fired once
+// they are). `loading` hands the sheet its rows 1.5 s after it is up; `stuck` never does. The card opens on
+// the rows of the run before, which the harness keeps in its defaults like the phone does.
 #import <UIKit/UIKit.h>
 
 #pragma mark - what the hooks call and the harness does not build
@@ -161,6 +163,77 @@ static NSMutableArray<NSMutableArray<NSString *> *> *spotifyRows(void) {
 
 @end
 
+#pragma mark - Spotify's sheet presentation
+
+// NavigationUI_SheetImpl.SheetPresentationController: a sheet with a dimming view of Spotify's own, black
+// at 0.7 fading in with the transition, added as the presentation begins.
+@interface _TtC22NavigationUI_SheetImpl27SheetPresentationController : UISheetPresentationController
+@end
+
+@implementation _TtC22NavigationUI_SheetImpl27SheetPresentationController
+- (void)presentationTransitionWillBegin {
+    [super presentationTransitionWillBegin];
+    UIView *dimming = [[UIView alloc] initWithFrame:self.containerView.bounds];
+    dimming.accessibilityIdentifier = @"Components.UI.SheetPresentation.Dimming";
+    dimming.backgroundColor = [UIColor colorWithWhite:0 alpha:0.7];
+    dimming.alpha = 0;
+    dimming.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.containerView insertSubview:dimming atIndex:0];
+    [self.presentedViewController.transitionCoordinator animateAlongsideTransition:^(id context) { dimming.alpha = 1; } completion:nil];
+}
+- (void)containerViewDidLayoutSubviews {
+    [super containerViewDidLayoutSubviews];
+}
+@end
+
+@interface SGHarnessSheetDelegate : NSObject <UIViewControllerTransitioningDelegate>
+@end
+
+@implementation SGHarnessSheetDelegate
+- (UIPresentationController *)presentationControllerForPresentedViewController:(UIViewController *)presented presentingViewController:(UIViewController *)presenting sourceViewController:(UIViewController *)source {
+    _TtC22NavigationUI_SheetImpl27SheetPresentationController *sheet = [[_TtC22NavigationUI_SheetImpl27SheetPresentationController alloc] initWithPresentedViewController:presented presentingViewController:presenting];
+    sheet.detents = @[UISheetPresentationControllerDetent.mediumDetent];
+    return sheet;
+}
+@end
+
+// Every frame for a second from the tap on the ⋯: does anything of Spotify's sheet or its dimming show?
+@interface SGHarnessFlashWatch : NSObject
+@property (nonatomic, weak) UIWindow *window;
+@property (nonatomic) NSInteger frames, shown;
+@property (nonatomic) CFTimeInterval start;
+@end
+
+@implementation SGHarnessFlashWatch
+static BOOL onScreen(UIView *view) {
+    if (!view.window) return NO;
+    for (UIView *v = view; v; v = v.superview) {
+        if (v.hidden || v.alpha < 0.01) return NO;
+        if (v.layer.mask && v.layer.mask.frame.size.width <= 1) return NO;
+    }
+    return YES;
+}
+- (void)tick:(CADisplayLink *)link {
+    if (!self.start) self.start = link.timestamp;
+    UIPresentationController *presentation = self.window.rootViewController.presentedViewController.presentationController;
+    UIView *dimming = nil;
+    for (UIView *v in presentation.containerView.subviews) {
+        if ([v.accessibilityIdentifier isEqualToString:@"Components.UI.SheetPresentation.Dimming"]) dimming = v;
+    }
+    BOOL sheet = presentation && onScreen(presentation.presentedView);
+    BOOL dim = dimming && onScreen(dimming) && dimming.alpha > 0.01;
+    self.frames++;
+    if (sheet || dim) {
+        self.shown++;
+        NSLog(@"[harness] frame %ld: %@%@ shows", (long)self.frames, sheet ? @"the sheet " : @"", dim ? @"the dimming" : @"");
+    }
+    if (link.timestamp - self.start > 1) {
+        [link invalidate];
+        NSLog(@"[harness] flash check: %ld of the first %ld frames after the tap showed Spotify's sheet or its dimming", (long)self.shown, (long)self.frames);
+    }
+}
+@end
+
 #pragma mark - the player
 
 @interface NowPlayingHarnessViewController : UIViewController
@@ -213,8 +286,10 @@ static NSMutableArray<NSMutableArray<NSString *> *> *spotifyRows(void) {
     navigation.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [container.view addSubview:navigation.view];
     [navigation didMoveToParentViewController:container];
-    container.modalPresentationStyle = UIModalPresentationPageSheet;
-    container.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.mediumDetent];
+    static SGHarnessSheetDelegate *delegate;
+    if (!delegate) delegate = [SGHarnessSheetDelegate new];
+    container.modalPresentationStyle = UIModalPresentationCustom;
+    container.transitioningDelegate = delegate;
     [self presentViewController:container animated:YES completion:nil];
 }
 
@@ -303,7 +378,13 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
     [self.window makeKeyAndVisible];
     UIWindow *window = self.window;
 
-    after(1, ^{ [player.more sendActionsForControlEvents:UIControlEventTouchUpInside]; });
+    after(1, ^{
+        static SGHarnessFlashWatch *watch;
+        watch = [SGHarnessFlashWatch new];
+        watch.window = window;
+        [[CADisplayLink displayLinkWithTarget:watch selector:@selector(tick:)] addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+        [player.more sendActionsForControlEvents:UIControlEventTouchUpInside];
+    });
     after(2.2, ^{ report(window, @"open"); });
     if (argument(@"dump")) after(2.4, ^{
         NSMutableString *out = [NSMutableString string];
@@ -330,6 +411,10 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
         after(3, ^{ tap(window, @"More"); });
         after(4, ^{ tap(window, @"Lyrics"); });
         after(5, ^{ report(window, @"after Lyrics"); });
+    } else if (argument(@"pending")) {
+        // With `loading`: Add to playlist tapped on the last menu's rows before Spotify's are in.
+        after(2.1, ^{ tap(window, @"Add to playlist"); });
+        after(4, ^{ report(window, @"after the held tap"); });
     } else if (argument(@"outside")) {
         after(3, ^{
             NSMutableArray<UIView *> *found = [NSMutableArray array];

@@ -184,8 +184,9 @@ Redesigned:
                   does stay Spotify's: its own sheet still opens, out of sight, and the menu is read off its
                   table, each row placed by the number Spotify's ListRow carries as its identifier and fired
                   through that ListRow; a page Spotify pushes onto the sheet (Share's destinations) shows the
-                  sheet, and a sheet with no rows within 4 s is shown as it is. Music app menu on the Now
-                  playing page turns it off. Tested in the simulator against harness/playermenu/
+                  sheet, and a sheet with no rows within 4 s is shown as it is. It opens on the rows the last
+                  menu had, kept across launches, and moves to Spotify's as they come in, a tap meanwhile held
+                  until they do. Always on in the redesign. Tested in the simulator against harness/playermenu/
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where after four seconds untouched while
                   the song plays the controls fade out and the lines take the whole player, until a touch or a pause
@@ -278,7 +279,7 @@ which of the lyrics, their pronunciation and their translation is set largest, a
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player
-buttons to hide); in the redesign instead Now playing (its device button, the moving background, and Music app menu, the ⋯ opening the Music app style menu rather than Spotify's sheet). Then Vibrations under either look, a card for
+buttons to hide); in the redesign instead Now playing (its device button and the moving background). Then Vibrations under either look, a card for
 Controls (on until switched off) and one for Music Haptics (off until switched on, with an ⓘ saying it
 follows the sound this iPhone plays while Spotify is open), each opening out while its switch is on:
 Controls into its Strength (10 to 100%, a tap at the new strength with each step), Music Haptics into its
