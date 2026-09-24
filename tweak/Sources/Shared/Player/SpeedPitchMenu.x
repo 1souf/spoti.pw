@@ -21,6 +21,9 @@
 //
 // The block keeps whether it was open for the rest of the session; speed and pitch last until Spotify
 // quits.
+//
+// The redesign's player menu draws a row of its own and takes the two sliders alone
+// (SGSpeedPitchPanelMake): the same view with its row left out and its panel always open.
 #import <CoreText/SFNTLayoutTypes.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
@@ -83,9 +86,13 @@ static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
 
 #pragma mark - the block
 
+NSNotificationName const SGSpeedPitchChangedNotification = @"SGSpeedPitchChangedNotification";
+
 @interface SGSpeedPitchView : UIView
 @property (nonatomic, weak) UITableView *table;
 @property (nonatomic) BOOL inFooter;
+// The sliders alone: no row, the panel at the top and always open.
+@property (nonatomic) BOOL panelOnly;
 @end
 
 @implementation SGSpeedPitchView {
@@ -239,7 +246,8 @@ static void placeTick(UISlider *slider) {
     CGFloat summaryX = CGRectGetMaxX(_title.frame) + kGrid;
     _summary.frame = CGRectMake(summaryX, 0, MAX(0, CGRectGetMinX(_chevron.frame) - kGrid - summaryX), kRowHeight);
 
-    _panel.frame = CGRectMake(0, kRowHeight, width, 2 * kSliderBlockHeight + kPanelBottom);
+    _row.hidden = self.panelOnly;
+    _panel.frame = CGRectMake(0, self.panelOnly ? 0 : kRowHeight, width, 2 * kSliderBlockHeight + kPanelBottom);
     CGFloat y = 0;
     for (NSArray<UIView *> *line in @[@[_speedName, _speedValue, _speed], @[_pitchName, _pitchValue, _pitch]]) {
         line[0].frame = CGRectMake(side, y + 4, width / 2 - side, 24);
@@ -297,12 +305,16 @@ static NSString *pitchText(float pitch) {
     NSMutableArray<NSString *> *changed = [NSMutableArray array];
     if (_shownSpeed != 1) [changed addObject:speedText(_shownSpeed)];
     if (_shownPitch != 0) [changed addObject:[pitchText(_shownPitch) stringByAppendingString:@" st"]];
-    _summary.text = sg_open ? nil : [changed componentsJoinedByString:@"  "];
+    NSString *summary = changed.count ? [changed componentsJoinedByString:@"  "] : nil;
+    _summary.text = sg_open ? nil : summary;
     _row.accessibilityLabel = changed.count ? [@"Speed and pitch, " stringByAppendingString:[changed componentsJoinedByString:@", "]] : @"Speed and pitch";
     _row.accessibilityValue = sg_open ? @"Expanded" : @"Collapsed";
     _chevron.transform = sg_open ? CGAffineTransformMakeRotation(M_PI) : CGAffineTransformIdentity;
-    _panel.alpha = sg_open ? 1 : 0;
-    _panel.accessibilityElementsHidden = !sg_open;
+    BOOL showsPanel = sg_open || self.panelOnly;
+    _panel.alpha = showsPanel ? 1 : 0;
+    _panel.accessibilityElementsHidden = !showsPanel;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGSpeedPitchChangedNotification object:nil
+                                                    userInfo:summary ? @{@"summary": summary} : nil];
 }
 
 #pragma mark actions
@@ -395,6 +407,27 @@ static NSString *pitchText(float pitch) {
 }
 
 @end
+
+#pragma mark - the sliders for a menu of a look's own
+
+CGFloat SGSpeedPitchPanelHeight(void) {
+    return 2 * kSliderBlockHeight + kPanelBottom;
+}
+
+UIView *SGSpeedPitchPanelMake(void) {
+    SGSpeedPitchView *panel = [[SGSpeedPitchView alloc] initWithFrame:CGRectMake(0, 0, 320, SGSpeedPitchPanelHeight())];
+    panel.panelOnly = YES;
+    [panel refresh];
+    return panel;
+}
+
+NSString *SGSpeedPitchSummary(void) {
+    NSMutableArray<NSString *> *changed = [NSMutableArray array];
+    float speed = snappedSpeed(SGPlayerSpeed()), pitch = SGPlayerPitch();
+    if (SGPlayerSpeedAllowed() && speed != 1) [changed addObject:speedText(speed)];
+    if (pitch != 0) [changed addObject:[pitchText(pitch) stringByAppendingString:@" st"]];
+    return changed.count ? [changed componentsJoinedByString:@"  "] : nil;
+}
 
 #pragma mark - the player's more button
 

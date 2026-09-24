@@ -17,6 +17,8 @@
 //                        and after a few seconds untouched the lines alone on the whole player
 //     PlayerGestures.x   the gestures' hookup
 //     PlayerMorph.x      the open and close grown out of the now playing bar's card, the cover flown
+//     PlayerMenu.x       the ⋯ opening a menu the way the Music app draws one (SGRPlayerMenu.h), over
+//                        Spotify's own sheet, which it reads its rows from and keeps out of sight
 //
 // Speed and pitch, once the redesign's own, are Shared/Player/SpeedPitch.h's; PlayerHeader.x still hands
 // the more button over, so a menu opened from it is taken for the player's.
@@ -30,6 +32,15 @@
 // The artwork's colours moving behind the player (on until switched off), or the blurred artwork held
 // still; the row is on the Now playing page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m).
 #define SGRKeyPlayerMotion @"spotifyglass.redesign.player.movingBackground"
+// The ⋯ opening the Music app style menu (on until switched off) rather than Spotify's sheet; the row is on
+// the Now playing page too.
+#define SGRKeyPlayerMenu @"spotifyglass.redesign.player.musicMenu"
+
+#pragma mark - the ⋯ menu (PlayerMenu.x)
+
+// Marks a sheet opened soon after a tap on `button`, the player's ⋯, as the one the menu takes over, and
+// the button as where the menu grows from (watching it twice does nothing).
+void SGRPlayerMenuWatchMoreButton(UIView *button);
 
 // The field behind the player, nil until the player has laid out once (PlayerField.x).
 SGRArtworkField *SGRPlayerField(void);

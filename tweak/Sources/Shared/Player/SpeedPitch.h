@@ -15,6 +15,17 @@
 // a menu presented from a now playing controller is taken for the player's without it, which is how the
 // native look's player gets the block.
 void SGPlayerMenuWatchMoreButton(UIView *button);
+// The two sliders alone, for a menu of a look's own that draws its own row for them (the redesign's
+// player menu, Redesigned/Player/PlayerMenu.x): SGSpeedPitchPanelHeight() tall at whatever width it is
+// given, showing the player's values as it is made.
+UIView *SGSpeedPitchPanelMake(void);
+CGFloat SGSpeedPitchPanelHeight(void);
+// What the row says beside its name, the speed and the pitch where either is changed ("1.25×  +2 st"),
+// nil while both are normal.
+NSString *SGSpeedPitchSummary(void);
+// Posted, object nil, whenever the block or the panel shows new values; userInfo's "summary" is
+// SGSpeedPitchSummary's text for them, missing while both are normal.
+extern NSNotificationName const SGSpeedPitchChangedNotification;
 // The speed Spotify's sound plays at, 1 when normal.
 double SGPlayerSpeed(void);
 // Whether speed can apply: Spotify's output was taken over when it wired it.

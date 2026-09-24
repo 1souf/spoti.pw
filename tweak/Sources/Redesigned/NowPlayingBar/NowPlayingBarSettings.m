@@ -12,6 +12,7 @@ UIViewController *SGRNowPlayingBarSettingsPage(void) {
         ]),
         SGSection(nil, @[
             SGSwitchRow(@"Moving background", nil, SGRKeyPlayerMotion),
+            SGSwitchRow(@"Music app menu", @"The ⋯ opens a menu like the Music app's; off, Spotify's own sheet", SGRKeyPlayerMenu),
         ]),
     ] footer:nil];
 }
