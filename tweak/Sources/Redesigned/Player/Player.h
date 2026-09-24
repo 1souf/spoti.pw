@@ -3,7 +3,8 @@
 // action, state and accessibility do too; the redesign adds the artwork field behind it, glass behind
 // the header buttons, bare glyphs for previous, play and next, a lyrics glyph in the footer, and one
 // screen with nothing under it: every card is collapsed and the player does not scroll. The lyrics
-// come to the player itself, the way the Music app shows them, when the lyrics glyph is tapped.
+// come to the player itself, the way the Music app shows them, when the lyrics glyph is tapped, and
+// have it to themselves while they play untouched, until a touch brings the controls back.
 //
 //     PlayerField.x      the switch's flags and rows, the field in the background plane, the cover it reads
 //     PlayerArtwork.x    the cover's corners, shadow and paused shrink, the lyric preview under it hidden
@@ -12,7 +13,8 @@
 //     PlayerFooter.x     share gone, lyrics, Connect and queue as one row of three glyphs
 //     PlayerCards.x      every card under the player collapsed, so the list closes up
 //     PlayerScroll.x     the list held at its top, so the player is one screen and cannot be scrolled up
-//     PlayerLyrics.x     the lyrics in the player: the cover as a thumbnail, the title up beside it
+//     PlayerLyrics.x     the lyrics in the player: the cover as a thumbnail, the title up beside it,
+//                        and after a few seconds untouched the lines alone on the whole player
 //     PlayerGestures.x   the gestures' hookup
 //     PlayerMorph.x      the open and close grown out of the now playing bar's card, the cover flown
 //

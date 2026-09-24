@@ -172,7 +172,9 @@ Redesigned:
     Player/       the redesigned full screen player (Player.h lists its files); its more button is handed to
                   Shared/Player's Speed and pitch, which draws in the menu it opens
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
-                  which the player shows in itself too, Player/PlayerLyrics.x): lines sung over each other lit together,
+                  which the player shows in itself too, Player/PlayerLyrics.x, where after four seconds untouched while
+                  the song plays the controls fade out and the lines take the whole player, until a touch or a pause
+                  brings the controls back; the tap that does so seeks nowhere): lines sung over each other lit together,
                   the stack moving on once the first is sung out; an instrumental break of 7 s or more held by three dots
                   that breathe and fill over its length on a Core Animation timeline laid against the song's clock; and
                   a line's pronunciation (under the words it spells) and translation, switched on from a glass button in
