@@ -19,15 +19,13 @@ double SGSingSourcePosition(SPTPlayerState *state) {
 %end
 
 %hook SPTEsperantoPlayer
-- (void)seekTo:(double)seconds {
+// seekTo: answers with an object (@24@0:8d16 in 9.1.78) that its caller may keep, so the hook hands it
+// on: declared void, the call after %orig would leave the caller whatever that call left in x0.
+- (id)seekTo:(double)seconds {
     SGSingPlaybackWillChange();
-    %orig;
+    id result = %orig;
     SGSingPlaybackDidSeek(seconds);
-}
-- (void)skipToNextTrack {
-    SGSingPlaybackWillChange();
-    %orig;
-    SGSingPlaybackDidChange();
+    return result;
 }
 - (id)skipToNextTrackWithOptions:(id)options {
     SGSingPlaybackWillChange();
