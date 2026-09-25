@@ -1,6 +1,7 @@
 // Settings: a Mod Settings row at the end of Spotify's settings list opens the mod's own page: the
-// Appearance card with Redesigned UI, then a page per part of Spotify, each holding what that part
-// offers in the stored look (App/Pages.m: Navbar, Player, Home & Library for the native look, Albums for the redesign), Audio
+// Appearance card with Redesigned UI, Karaoke in the redesign (Sing, Redesigned/Lyrics/SingSettings.m), then a
+// page per part of Spotify, each holding what that part offers in the stored look (App/Pages.m: Navbar,
+// Player, Lyrics, Home & Library for the native look, Albums for the redesign), Audio
 // effects (Shared/AudioEffects, in either look and applying straight away), Privacy & clutter
 // and Labs, All flags, a searchable list of every flag with an override per flag, and Mod, the
 // build, its updates and links. The same row leads the side drawer's list (trees/test6.txt), above
@@ -18,6 +19,8 @@
 #import "Settings/SGModPage.h"
 #import "Native/Home/Home.h"
 #import "Redesigned/Album/Album.h"
+#import "Redesigned/Lyrics/Sing.h"
+#import "Shared/Sing/SGSingModel.h"
 #import "Shared/Privacy/Privacy.h"
 #import "Shared/Flags/Flags.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
@@ -54,6 +57,7 @@ static UIViewController *modSettingsPage(void) {
     NSMutableArray<SGModRow *> *parts = [NSMutableArray arrayWithArray:@[
         pageRow(@"Navbar", @"dock.rectangle", ^UIViewController *{ return SGNavbarPage(); }),
         pageRow(@"Player", @"play.circle", ^UIViewController *{ return SGPlayerSettingsPage(); }),
+        pageRow(@"Lyrics", @"quote.bubble", ^UIViewController *{ return SGLyricsSettingsPage(); }),
         audioEffects,
     ]];
     if (@available(iOS 17.0, *)) {
@@ -63,8 +67,15 @@ static UIViewController *modSettingsPage(void) {
     }
     if (SGRedesignedUIStored()) [parts addObject:pageRow(@"Albums", @"square.stack", ^UIViewController *{ return SGRAlbumSettingsPage(); })];
     else [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
+    [sections addObject:SGAppearanceSection()];
+    // Sing's microphone is the redesigned player's, so Karaoke is the redesign's; its row follows a download.
+    if (SGRedesignedUIStored()) {
+        SGModRow *karaoke = pageRow(@"Karaoke", @"music.mic", ^UIViewController *{ return SGRKaraokeSettingsPage(); });
+        karaoke.value = ^NSString *{ return SGRKaraokeSummary(); };
+        karaoke.refreshOn = SGSingModelDidChangeNotification;
+        [sections addObject:SGSection(nil, @[karaoke])];
+    }
     [sections addObjectsFromArray:@[
-        SGAppearanceSection(),
         SGSection(nil, parts),
         SGSection(nil, @[
             pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),

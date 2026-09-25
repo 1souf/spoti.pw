@@ -1,5 +1,5 @@
-// Lyrics > Karaoke, in the redesign (App/Pages.m puts it on the Lyrics page): Sing's switch and its voice
-// model. The switch puts the microphone in the player's lyrics and takes it away again at once; off, Sing
+// Mod Settings > Karaoke, in the redesign (App/ModSettings.x puts its row on the main page): Sing's switch and
+// its voice model. The switch puts the microphone in the player's lyrics and takes it away again at once; off, Sing
 // does no work at all. The model row reads out where the download is and moves along with it, over a bar
 // while it runs, and the row under it is what can be done next: download it, stop the download, or remove
 // the model. Below iOS 27, where the separator cannot run, the section is one row saying so.
@@ -106,7 +106,7 @@ static SGModRow *unavailableRow(void) {
     });
 }
 
-SGModSection *SGRKaraokeSection(void) {
+static SGModSection *karaokeSection(void) {
     if (!SGSingSupported()) return SGNotedSection(@"Karaoke", @[unavailableRow()], footer());
     SGModRow *sing = SGOptionRow(@"Sing", @"The microphone in the lyrics", SGRKeySing);
     sing.changed = ^(BOOL on) { SGRSingApplySwitch(); };
@@ -132,4 +132,18 @@ SGModSection *SGRKaraokeSection(void) {
         return state == SGSingModelInstalled || (state == SGSingModelMissing && SGSingModelReceived() > 0);
     };
     return SGNotedSection(@"Karaoke", @[sing, model, download, cancel, remove], footer());
+}
+
+UIViewController *SGRKaraokeSettingsPage(void) {
+    return [[SGModPage alloc] initWithTitle:@"Karaoke" intro:nil sections:@[karaokeSection()] footer:nil];
+}
+
+// Beside the main page's row: what Sing would do now, or how far its model has come.
+NSString *SGRKaraokeSummary(void) {
+    if (!SGSingSupported()) return @"Needs iOS 27";
+    SGSingModelState state = SGSingModelCurrentState();
+    if (state == SGSingModelDownloading) return [NSString stringWithFormat:@"%lld %%", SGSingModelReceived() * 100 / SGSingModelSize()];
+    if (state == SGSingModelChecking) return @"Checking…";
+    if (!SGFlag(SGRKeySing, NO)) return @"Off";
+    return state == SGSingModelInstalled ? @"On" : @"No model";
 }

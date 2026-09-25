@@ -197,7 +197,7 @@ The model the app downloads is that public-tools export (`export.unpinnedPayload
 
 ## The model on the phone
 
-The model is not in the IPA. In the redesigned look, **Mod Settings → Player → Lyrics → Karaoke**
+The model is not in the IPA. In the redesigned look, **Mod Settings → Karaoke**
 has Sing's switch, which puts the microphone in the player's lyrics and takes it away at once (off,
 Sing does no work), and the voice model's row: Not downloaded, Downloading 43 % · 210 of 467 MB with
 a bar under it and Cancel download, Checking…, Downloaded · 467 MB with Remove voice model, or

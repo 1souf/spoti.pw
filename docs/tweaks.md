@@ -119,7 +119,7 @@ Shared:
                   uses the GPU in the foreground and its warm CPU model in the background. The audible
                   clock follows emitted source samples while delayed audio drains. Model loading overlaps source capture;
                   verified continuous next-track PCM keeps its worker and reserve across a natural transition.
-                  Redesigned/Lyrics owns the Now Playing microphone control and the Karaoke section. The voice
+                  Redesigned/Lyrics owns the Now Playing microphone control and Mod Settings' Karaoke page. The voice
                   model (about 470 MB) is not in the IPA: SGSingModel.m downloads its files from the model host in a
                   background URL session, checks each against a size and a SHA-256 pinned in the code, and moves
                   them into Application Support/spoti.pw/Sing only when all are right (SingModel.x reconnects at
@@ -202,7 +202,7 @@ Redesigned:
                   sheet, and a sheet with no rows within 4 s is shown as it is. It opens on the rows the last
                   menu had, kept across launches, and moves to Spotify's as they come in, a tap meanwhile held
                   until they do. Always on in the redesign. Tested in the simulator against harness/playermenu/
-                  With Sing on and its voice model downloaded (Lyrics > Karaoke, Redesigned/Lyrics/SingSettings.m,
+                  With Sing on and its voice model downloaded (Mod Settings > Karaoke, Redesigned/Lyrics/SingSettings.m,
                   both applying at once), its microphone (Redesigned/Lyrics/SGRSingControl.m) sits in the
                   lyrics' bottom trailing corner, opposite their glass button, and goes down with the lines when the
                   controls go; while it is open, preparing or explaining itself the controls stay, and a touch on it
@@ -294,10 +294,13 @@ look AMOLED (the redesign is always black); Spotify's green is offered from the 
 is set. Redesigned UI is the one switch between the two looks (see Layers): it glows
 (Settings/SGGlowSwitch), its ⓘ says what it changes, and flipping it offers to restart Spotify.
 The pages show only what the stored look has: a page opened after flipping the switch already shows
-what the restart will bring. Then a card of parts. Navbar: the tab editor of the stored look, each with
-its own list of tabs. Player: Gestures, Lyrics (the ordered list of lyrics sources, lyrics for every track,
+what the restart will bring. In the redesign Karaoke comes next, on a card of its own: Sing's switch and its
+voice model's download (Redesigned/Lyrics/SingSettings.m), with Off, On, No model or the download's percentage
+beside the row, "Needs iOS 27" below iOS 27. Then a card of parts. Navbar: the tab editor of the stored look,
+each with its own list of tabs. Lyrics, beside Player: the ordered list of lyrics sources, lyrics for every track,
 naming the source in the redesign, the lock screen, and glass lyrics in the native look; in the redesign also
-which of the lyrics, their pronunciation and their translation is set largest, and the translation's language), Blocked artists (with the count on the row) and Lock screen widget (its controls and, under Artwork, Animated lock screen, the track's Canvas or the album's Apple Music cover played behind the lock screen's controls, on until switched off, with a Sources page for their order, and a "Needs iOS 26" row below that), which work with either look;
+which of the lyrics, their pronunciation and their translation is set largest, and the translation's language.
+Player: Gestures, Blocked artists (with the count on the row) and Lock screen widget (its controls and, under Artwork, Animated lock screen, the track's Canvas or the album's Apple Music cover played behind the lock screen's controls, on until switched off, with a Sources page for their order, and a "Needs iOS 26" row below that), which work with either look;
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player

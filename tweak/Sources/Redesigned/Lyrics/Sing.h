@@ -1,6 +1,6 @@
-// Sing in the redesign: its switch and the Karaoke section of the Lyrics page. The work itself is
+// Sing in the redesign: its switch and the Karaoke page of Mod Settings. The work itself is
 // Shared/Sing's; its microphone in the player's lyrics is SGRSingControl.h's.
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 #define SGRKeySing @"spotifyglass.redesign.sing"   // off until switched on
 
@@ -8,6 +8,7 @@
 // the microphone comes and goes at once, no restart.
 void SGRSingApplySwitch(void);
 
-// SingSettings.m: Lyrics > Karaoke, with the switch and the voice model's download.
-@class SGModSection;
-SGModSection *SGRKaraokeSection(void);
+// SingSettings.m: Mod Settings > Karaoke, with the switch and the voice model's download, and what its row on
+// the main page says beside the chevron (Off, On, No model, the download's percentage).
+UIViewController *SGRKaraokeSettingsPage(void);
+NSString *SGRKaraokeSummary(void);

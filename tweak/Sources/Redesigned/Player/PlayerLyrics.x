@@ -35,7 +35,7 @@
 // back, and a tap that does so does only that: it does not seek to the line under it. Pausing brings
 // them back as well, and they stay while the song is paused. VoiceOver keeps them.
 //
-// With Sing available (Shared/Sing: switched on in Lyrics > Karaoke, its voice model downloaded), its
+// With Sing available (Shared/Sing: switched on in Mod Settings > Karaoke, its voice model downloaded), its
 // microphone (Redesigned/Lyrics/SGRSingControl.h) sits in the bottom trailing corner of the lines' band,
 // opposite their own glass button, and goes down with the band when the controls go. While it is open,
 // preparing or explaining itself the controls do not go, but ones that are away already stay away: a
@@ -676,7 +676,7 @@ static void awaitLyrics(void) {
     }
 }
 
-// Sing switched on or off in Lyrics > Karaoke, or its voice model arriving or going: the lyrics' glyph and
+// Sing switched on or off in Mod Settings > Karaoke, or its voice model arriving or going: the lyrics' glyph and
 // the microphone follow at once, and lyrics that were open only for Sing put the cover back.
 static void singAvailabilityChanged(void) {
     static BOOL available;

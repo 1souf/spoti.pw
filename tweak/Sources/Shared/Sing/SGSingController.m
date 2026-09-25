@@ -111,7 +111,7 @@ static void workerStatus(void *context, int32_t status) {
     if (!(self = [super init])) return nil;
     _retired = [NSMutableSet set];
     _level = _reduced = SGSingMinimumVocalLevel;
-    // Without its voice model Sing is unavailable and shows nothing; Lyrics > Karaoke says why and gets it.
+    // Without its voice model Sing is unavailable and shows nothing; Mod Settings > Karaoke says why and gets it.
     _model = SGSingModelPath();
     _state = _model ? SGSingIdle : SGSingUnavailable;
     SGAddPlayerStateObserver(self);
@@ -403,7 +403,7 @@ static void workerStatus(void *context, int32_t status) {
     if (!_model) [self publish:SGSingUnavailable explanation:nil];
     else if (_state == SGSingUnavailable) [self publish:SGSingIdle explanation:nil];
 }
-// The model downloaded or removed from Lyrics > Karaoke. Going, it takes Sing with it: the original audio
+// The model downloaded or removed from Mod Settings > Karaoke. Going, it takes Sing with it: the original audio
 // still retained plays out in order, and the warm model is let go before its files are.
 - (void)modelChanged:(NSNotification *)note {
     NSString *model = SGSingModelPath();
