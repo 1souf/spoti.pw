@@ -2,6 +2,7 @@
 // queue; only the render consumer calls this API. No allocation after Create, no locks or waits.
 #pragma once
 #include "Shared/Audio/SGAudioRingBuffer.h"
+#include "Shared/Sing/SGSingFormat.h"
 
 typedef enum {
     SGSingTimelineIdle,
@@ -10,7 +11,7 @@ typedef enum {
     SGSingTimelineDraining,
     SGSingTimelineRecovering
 } SGSingTimelineState;
-enum { SGSingRecoveryLimitFrames = 44100 * 8 };
+enum { SGSingRecoveryLimitFrames = SGSingSampleRate * 8 };
 typedef struct SGSingTimeline SGSingTimeline;
 
 SGSingTimeline *SGSingTimelineCreate(uint32_t capacityFrames, uint32_t reserveFrames);

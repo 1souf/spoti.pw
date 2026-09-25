@@ -25,7 +25,6 @@ uint64_t SGSingStreamPresented(const SGSingStream *stream);
 uint64_t SGSingStreamCaptured(const SGSingStream *stream);
 uint64_t SGSingStreamQueued(const SGSingStream *stream);
 uint64_t SGSingStreamReadyFrames(const SGSingStream *stream);
-uint64_t SGSingStreamProcessed(const SGSingStream *stream);
 SGSingStopReason SGSingStreamStopReason(const SGSingStream *stream);
 int32_t SGSingStreamSourceError(const SGSingStream *stream);
 int32_t SGSingStreamWorkerState(const SGSingStream *stream); // -1 stopped, 0 paused, 1 reading
@@ -33,7 +32,7 @@ int32_t SGSingStreamWorkerState(const SGSingStream *stream); // -1 stopped, 0 pa
 // Render endpoint. Never pulls source while paused or draining. Preparation emits aligned original audio; only verified available frames permit extra pulls.
 int32_t SGSingStreamRender(SGSingStream *stream, uint32_t frames, float *stereo,
                           SGSingSourceRead source, void *context, uint32_t available);
-// Worker endpoint. Input holds 1024 stereo frames; output holds one completed hop.
+// Worker endpoint. Input holds SGSingStreamPacketFrames stereo frames; output holds one completed hop.
 bool SGSingStreamReadInput(SGSingStream *stream, SGAudioStamp *stamp, float *stereo);
 // The production worker starts at the first still-audible source frame after model loading.
 // Only the initial expired prefix is skipped; subsequent packets must remain consecutive.

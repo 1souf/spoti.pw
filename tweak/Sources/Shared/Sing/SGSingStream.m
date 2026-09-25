@@ -5,6 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The worker's input queue holds this many packets, about 24 s of source: a cold model load
+// collects its audio in the timeline instead, so the queue only ever holds a backlog of seconds.
+enum { kInputPackets = 1024, kOutputHops = 8 };
+// Forwarding the retained original to a worker catching up: at most this many packets (64 KB) a render.
+enum { kForwardPacketsPerRender = 8 };
+
 struct SGSingStream {
     SGAudioStamp origin;
     uint64_t captured, presented, forwarded;
@@ -18,11 +24,11 @@ struct SGSingStream {
     atomic_bool paused, bypass, modelReady;
     atomic_uint levelBits, state, stopReason;
     atomic_int sourceError;
-    _Atomic uint64_t queued, publishedPresented, publishedCaptured, readyFrames, processedFrames;
+    _Atomic uint64_t queued, publishedPresented, publishedCaptured, readyFrames;
 };
 
 SGSingStream *SGSingStreamCreate(SGAudioStamp origin, uint32_t window, uint32_t hop, float level) {
-    if ((window != 88200 && window != 176400) || hop < window / 2 || hop > window * 3 / 4 || !origin.generation) return NULL;
+    if (window != SGSingWindowFrames || hop < window / 2 || hop > window * 3 / 4 || !origin.generation) return NULL;
     SGSingStream *s = calloc(1, sizeof *s);
     if (!s) return NULL;
     s->presented = origin.sourceFrame; atomic_store(&s->publishedPresented, origin.sourceFrame);
@@ -32,9 +38,9 @@ SGSingStream *SGSingStreamCreate(SGAudioStamp origin, uint32_t window, uint32_t 
     // Start with a full window of ready vocals (two completed hops). The first inference
     // duration cannot predict the next worker scheduling delay. Less overlap reduces repeated
     // inference work; the reserve still covers a full future hop before vocal reduction begins.
-    s->timeline = SGSingTimelineCreate(352800, window);
-    s->input = SGAudioRingCreate(1024, SGSingStreamPacketFrames, 2);
-    s->output = SGAudioRingCreate(8, hop, 2);
+    s->timeline = SGSingTimelineCreate(SGSingTimelineFrames, window);
+    s->input = SGAudioRingCreate(kInputPackets, SGSingStreamPacketFrames, 2);
+    s->output = SGAudioRingCreate(kOutputHops, hop, 2);
     s->vocals = calloc((size_t)hop * 2, sizeof(float));
     if (!s->timeline || !s->input || !s->output || !s->vocals) { SGSingStreamDestroy(s); return NULL; }
     SGSingStreamSetLevel(s, level);
@@ -65,7 +71,6 @@ uint64_t SGSingStreamPresented(const SGSingStream *s) { return atomic_load(&s->p
 uint64_t SGSingStreamCaptured(const SGSingStream *s) { return atomic_load(&s->publishedCaptured); }
 uint64_t SGSingStreamQueued(const SGSingStream *s) { return atomic_load(&s->queued); }
 uint64_t SGSingStreamReadyFrames(const SGSingStream *s) { return atomic_load(&s->readyFrames); }
-uint64_t SGSingStreamProcessed(const SGSingStream *s) { return atomic_load(&s->processedFrames); }
 SGSingStopReason SGSingStreamStopReason(const SGSingStream *s) { return atomic_load(&s->stopReason); }
 int32_t SGSingStreamSourceError(const SGSingStream *s) { return atomic_load(&s->sourceError); }
 int32_t SGSingStreamWorkerState(const SGSingStream *s) {
@@ -87,7 +92,7 @@ bool SGSingStreamReadLiveInput(SGSingStream *s, SGAudioStamp *stamp, float *pcm)
     // Off-render, bounded by the input queue's capacity. Hashing/compilation may have taken
     // seconds; inferring already emitted audio only delays activation and wastes energy.
     uint64_t first = SGSingStreamPresented(s);
-    for (unsigned i = 0; i < 1024; i++) {
+    for (unsigned i = 0; i < kInputPackets; i++) {
         if (!SGSingStreamReadInput(s, stamp, pcm)) return false;
         if (stamp->sourceFrame + stamp->frames <= first) continue;
         uint32_t skip = first > stamp->sourceFrame ? (uint32_t)(first - stamp->sourceFrame) : 0;
@@ -101,9 +106,7 @@ bool SGSingStreamReadLiveInput(SGSingStream *s, SGAudioStamp *stamp, float *pcm)
 bool SGSingStreamWriteVocals(SGSingStream *s, SGAudioStamp stamp, const float *pcm) {
     if (atomic_load(&s->bypass) || !SGAudioStampMatches(stamp, s->origin.generation, s->origin.track, s->origin.format) ||
         stamp.frames != s->hop) return false;
-    if (!SGAudioRingWrite(s->output, stamp, pcm)) return false;
-    atomic_store(&s->processedFrames, stamp.sourceFrame + stamp.frames - s->origin.sourceFrame);
-    return true;
+    return SGAudioRingWrite(s->output, stamp, pcm);
 }
 int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingSourceRead source, void *context, uint32_t available) {
     if (!s || !pcm || !source || !frames || frames > SGSingStreamMaximumRenderFrames) return -1;
@@ -123,7 +126,7 @@ int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingS
     uint32_t minimum = queued < frames ? frames - (uint32_t)queued : 0;
     uint32_t wanted = frames;
     if (queued < target) wanted += target - queued < frames ? target - (uint32_t)queued : frames;
-    uint32_t spare = available > 5292 ? available - 5292 : 0;
+    uint32_t spare = available > SGSingReserveFrames ? available - SGSingReserveFrames : 0;
     if (wanted > spare) wanted = spare;
     if (wanted < minimum) wanted = minimum;
     if (wanted > writable) wanted = writable;
@@ -152,9 +155,9 @@ int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingS
     }
     if (atomic_load(&s->modelReady) && !atomic_load(&s->bypass)) {
         if (!s->forwardingStarted) { s->forwarded = s->presented; s->forwardingStarted = true; }
-        // At most eight packets (64 KB of PCM) per render, including cold-load catch-up.
-        // The playback ring, not the worker queue, owns audio accumulated during model load.
-        for (unsigned n = 0; n < 8; n++) {
+        // Cold-load catch-up included: the playback ring, not the worker queue, owns the audio
+        // accumulated while the model loaded.
+        for (unsigned n = 0; n < kForwardPacketsPerRender; n++) {
             uint32_t count = SGSingTimelineCopyOriginal(s->timeline, s->forwarded, s->source, SGSingStreamPacketFrames);
             if (!count) break;
             SGAudioStamp stamp = s->origin; stamp.sourceFrame = s->forwarded; stamp.frames = count;

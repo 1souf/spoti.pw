@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { window = 88200, hop = 66150, rate = 44100 };
+enum { window = SGSingWindowFrames, hop = SGSingHopFrames, rate = SGSingSampleRate };
 static float input[2048], output[8192], vocals[hop*2];
 static uint64_t pulled, audible, workerFrames, nextWindow;
 static uint32_t seed = 41, budget;
@@ -57,7 +57,7 @@ static unsigned scenario(bool ahead, bool stall, bool cancelEarly, float level, 
             SGSingStreamBypass(stream); cancelled=true;
         }
         uint64_t queued=SGSingStreamQueued(stream);
-        budget=available>5292 ? available-5292 : 0;
+        budget=available>SGSingReserveFrames ? available-SGSingReserveFrames : 0;
         uint32_t minimum=queued < frames ? frames-(uint32_t)queued : 0;
         if (budget<minimum) budget=minimum;
         // Draining has no source reads until its last retained prefix is emitted.

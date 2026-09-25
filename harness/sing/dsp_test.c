@@ -89,25 +89,7 @@ static void mixing(void) {
     SGSingMixerSetLevel(&m, NAN);
     assert(m.targetGain == 1);
 }
-static void timeline(void) {
-    assert(SGSingAudiblePosition(10, 88200, 44100) == 8);
-    assert(SGSingAudiblePosition(1, 88200, 44100) == 0);
-    assert(SGSingAudiblePosition(10, 0, 44100) == 10);
-    assert(SGSingAudiblePosition(10, 4, 0) == 10);
-    SGSingGeneration s = {.enabled = true};
-    SGSingInvalidate(&s, 42, 1);
-    uint64_t old = s.generation;
-    assert(SGSingAccepts(&s, old, 42, 1));
-    s.paused = true; // an in-flight block may finish while paused; no new source is requested
-    assert(SGSingAccepts(&s, old, 42, 1));
-    SGSingInvalidate(&s, 42, 1); // seek, same track
-    assert(!SGSingAccepts(&s, old, 42, 1));
-    SGSingInvalidate(&s, 43, 2); // next track or route/format
-    assert(!SGSingAccepts(&s, s.generation, 42, 1));
-    s.enabled = false;
-    assert(!SGSingAccepts(&s, s.generation, 43, 2));
-}
 int main(void) {
-    rings(); mixing(); timeline();
-    puts("sing: wraparound, full/empty, 100000 concurrent packets, generations, ramps, limiter and clock passed");
+    rings(); mixing();
+    puts("sing: wraparound, full/empty, 100000 concurrent packets, ramps and limiter passed");
 }

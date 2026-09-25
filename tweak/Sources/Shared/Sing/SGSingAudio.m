@@ -5,6 +5,8 @@
 #include <string.h>
 #include <math.h>
 
+// Clock markers waiting for the render side: a track boundary the source crossed, one per song.
+enum { kMarkers = 4 };
 static _Atomic uint64_t epoch = 1, clockEpoch, clockTrack, clockBits, clockSequence;
 static uint64_t bitsOf(double value) { uint64_t bits; memcpy(&bits, &value, sizeof bits); return bits; }
 static double valueOf(uint64_t bits) { double value; memcpy(&value, &bits, sizeof value); return value; }
@@ -15,7 +17,7 @@ struct SGSingAudio {
     _Atomic uint64_t expectedTrack, prefetchedTrack, prefetchedFrame;
     uint64_t lastBoundary;
     // Main produces clock markers, render consumes them when their PCM becomes audible.
-    struct { uint64_t track, frame; } markers[4];
+    struct { uint64_t track, frame; } markers[kMarkers];
     atomic_uint markerHead, markerTail;
     SGSingStream *stream;
     const AudioTimeStamp *time; // borrowed only within the current render call
@@ -51,7 +53,7 @@ static OSStatus process(void *context, UInt32 frames, AudioBufferList *data, con
         uint64_t captured = SGSingStreamCaptured(a->stream);
         uint64_t expected = atomic_load(&a->expectedTrack), prefetched = atomic_load(&a->prefetchedTrack);
         bool continuous = expected && (!prefetched || captured <= atomic_load(&a->prefetchedFrame));
-        SGAudioSourcePrefix prefix = SGAudioPipelineSourcePrefix(count * 2 + 5292, continuous);
+        SGAudioSourcePrefix prefix = SGAudioPipelineSourcePrefix(count * 2 + SGSingReserveFrames, continuous);
         if (prefix.boundary != UINT32_MAX && captured + prefix.boundary != a->lastBoundary && !prefetched) {
             a->lastBoundary = captured + prefix.boundary;
             atomic_store(&a->prefetchedFrame, a->lastBoundary);
@@ -69,14 +71,14 @@ static OSStatus process(void *context, UInt32 frames, AudioBufferList *data, con
         unsigned tail = atomic_load_explicit(&a->markerTail, memory_order_relaxed);
         unsigned head = atomic_load_explicit(&a->markerHead, memory_order_acquire);
         uint64_t presented = SGSingStreamPresented(a->stream);
-        for (unsigned n = 0; tail != head && n < 4; n++) {
-            if (presented < a->markers[tail % 4].frame) break;
-            a->track = a->markers[tail % 4].track;
-            a->origin = a->markers[tail % 4].frame;
+        for (unsigned n = 0; tail != head && n < kMarkers; n++) {
+            if (presented < a->markers[tail % kMarkers].frame) break;
+            a->track = a->markers[tail % kMarkers].track;
+            a->origin = a->markers[tail % kMarkers].frame;
             a->position = 0;
             atomic_store_explicit(&a->markerTail, ++tail, memory_order_release);
         }
-        double position = a->position + (SGSingStreamPresented(a->stream) - a->origin) / 44100.0;
+        double position = a->position + (SGSingStreamPresented(a->stream) - a->origin) / (double)SGSingSampleRate;
         position = fmax(a->position, position - valueOf(atomic_load(&a->latencyBits)));
         // A natural transition keeps its audio epoch. Publish track and position as one
         // snapshot so a concurrent lyrics/lock-screen read cannot mix the two songs.
@@ -100,7 +102,7 @@ SGSingAudio *SGSingAudioCreate(SGAudioStamp origin, uint32_t window, uint32_t ho
 SGSingStream *SGSingAudioStream(SGSingAudio *a) { return a ? a->stream : NULL; }
 bool SGSingAudioAttach(SGSingAudio *a) {
     AudioStreamBasicDescription format = {0};
-    if (!a || a->epoch != atomic_load(&epoch) || !SGAudioPipelineSourceFormat(&format) || format.mSampleRate != 44100 || format.mChannelsPerFrame != 2 ||
+    if (!a || a->epoch != atomic_load(&epoch) || !SGAudioPipelineSourceFormat(&format) || format.mSampleRate != SGSingSampleRate || format.mChannelsPerFrame != 2 ||
         format.mFormatID != kAudioFormatLinearPCM || format.mBitsPerChannel != 32 || format.mBytesPerFrame != sizeof(float) ||
         !(format.mFormatFlags & kAudioFormatFlagIsFloat) || !(format.mFormatFlags & kAudioFormatFlagIsNonInterleaved)) return false;
     return SGAudioPipelineSourceCanReadAhead() && SGAudioPipelineSetSourceProcessor(process, a);
@@ -129,9 +131,9 @@ bool SGSingAudioContinueTrack(SGSingAudio *a, uint64_t track) {
     if (SGSingStreamCaptured(a->stream) <= frame) return false;
     unsigned head = atomic_load_explicit(&a->markerHead, memory_order_relaxed);
     unsigned tail = atomic_load_explicit(&a->markerTail, memory_order_acquire);
-    if (head - tail == 4) return false;
-    a->markers[head % 4].track = track;
-    a->markers[head % 4].frame = frame;
+    if (head - tail == kMarkers) return false;
+    a->markers[head % kMarkers].track = track;
+    a->markers[head % kMarkers].frame = frame;
     atomic_store_explicit(&a->markerHead, head + 1, memory_order_release);
     atomic_store(&a->expectedTrack, 0);
     atomic_store(&a->prefetchedTrack, 0);
@@ -142,7 +144,7 @@ bool SGSingAudioAwaitingTrack(SGSingAudio *a, uint64_t track) {
     unsigned head = atomic_load_explicit(&a->markerHead, memory_order_acquire);
     unsigned tail = atomic_load_explicit(&a->markerTail, memory_order_acquire);
     // Main only reads the newest marker it owns; the render endpoint never writes its slot.
-    return head != tail && a->markers[(head - 1) % 4].track == track;
+    return head != tail && a->markers[(head - 1) % kMarkers].track == track;
 }
 void SGSingAudioSetLatency(SGSingAudio *a, double seconds) {
     atomic_store(&a->latencyBits, bitsOf(isfinite(seconds) ? fmax(0, seconds) : 0));

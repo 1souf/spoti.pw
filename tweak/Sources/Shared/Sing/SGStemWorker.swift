@@ -10,6 +10,8 @@ public typealias StemStatus = @convention(c) (UnsafeMutableRawPointer?, Int32) -
 // SGStemWorker.h's SGStemLoading...SGStemFailed, and the stream's packet size (SGSingStreamPacketFrames).
 private enum StemState: Int32 { case loading = 1, ready, finished, failed }
 private let packetFrames = 1024
+private let warmSeconds = 60                    // how long the model outlives the last worker using it
+private let idlePoll = Duration.milliseconds(25) // how soon a worker with nothing to read looks again
 
 // One warm model, shared by the workers that follow each other and kept for a while after the last
 // one ends. A load in flight is shared too, and one made stale by a purge never becomes the warm model.
@@ -86,7 +88,7 @@ private final class SGStemJob: @unchecked Sendable {
     }
     private func retention() -> Int {
         lock.lock(); defer { lock.unlock() }
-        return unload ? 0 : 60
+        return unload ? 0 : warmSeconds
     }
     private func report(_ value: StemState) { status(context, value.rawValue) }
 
@@ -111,7 +113,7 @@ private final class SGStemJob: @unchecked Sendable {
                 if packetOffset == packetCount {
                     let count = read(context, &packet, &metadata)
                     if count < 0 { break }
-                    if count == 0 { try await Task.sleep(for: .milliseconds(25)); continue }
+                    if count == 0 { try await Task.sleep(for: idlePoll); continue }
                     guard count <= packetFrames else { throw SGStemError.invalidInput }
                     if origin == nil {
                         origin = metadata; received = metadata[2]; nextWindow = received
