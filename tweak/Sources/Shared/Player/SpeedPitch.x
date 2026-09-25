@@ -34,7 +34,7 @@
 // the hardware's, not the one Spotify hands the unit (harness/audio-effects/sim), so the fallback's unit is made
 // for that one.
 //
-// Speed and pitch last until Spotify quits; whether pitch follows speed is stored.
+// Speed and pitch last until Spotify quits; whether pitch follows speed is stored, and on until turned off.
 //
 // Threading: the render callback and the notify run on the render thread and touch only atomics and the
 // units; Spotify sets its properties and starts its unit on its audio thread; everything else is main
@@ -389,7 +389,7 @@ void SGSetPlayerPitchFollowsSpeed(BOOL follows) {
 
 %ctor {
     storeFloat(&sg_speedBits, 1);
-    sg_follows = SGFlag(SGKeyPitchFollowsSpeed, NO);
+    sg_follows = SGEnabled(SGKeyPitchFollowsSpeed);
     static const SGAudioProcessor processor = {prepareOutput, rendered};
     SGAudioPipelineRegister(SGAudioStageSpeedPitch, &processor);
     SGAudioPipelineSetPullProcessor(processPull);

@@ -37,9 +37,9 @@ void SGSetPlayerPitch(float semitones);
 // Whether the output could be reached to change its pitch.
 BOOL SGPlayerPitchAvailable(void);
 // Pitch follows speed, as a record played faster: the pitch slider goes and speed is played by resampling
-// (SpeedPitch.x). The switch is stored, but it only applies where speed does, so this is NO while
-// SGPlayerSpeedAllowed() is NO. Turning it on puts the pitch back to normal; while it is on, SGSetPlayerPitch
-// does nothing.
+// (SpeedPitch.x). The switch is on until turned off, and stored, but it only applies where speed does, so
+// this is NO while SGPlayerSpeedAllowed() is NO. Turning it on puts the pitch back to normal; while it is
+// on, SGSetPlayerPitch does nothing.
 #define SGKeyPitchFollowsSpeed @"spotifyglass.speedPitch.follows"
 BOOL SGPlayerPitchFollowsSpeed(void);
 void SGSetPlayerPitchFollowsSpeed(BOOL follows);

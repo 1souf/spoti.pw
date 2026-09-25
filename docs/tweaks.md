@@ -128,7 +128,7 @@ Shared:
                   one hook for every feature that wants it (PlayerState.x), the lock screen widget's flags, and in the
                   more button's menu Speed and pitch: both done to Spotify's audio by Apple's time and pitch unit, put
                   between its mixer and its RemoteIO unit through Audio/SGAudioPipeline's connection
-                  (SpeedPitchMenu.x, SpeedPitch.x, SGTimePitch.m). With Pitch follows speed switched on (stored) the pitch
+                  (SpeedPitchMenu.x, SpeedPitch.x, SGTimePitch.m). With Pitch follows speed on (the default, stored) the pitch
                   slider folds away and Apple's varispeed takes the unit's place: the song resampled like a record, no
                   time stretch to smear it. The block goes into Spotify's own context menu sheet
                   and is drawn from its own measures, not the Kit's, so it sits there under either look. Tested on the
