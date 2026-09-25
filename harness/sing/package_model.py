@@ -14,6 +14,9 @@ parser.add_argument("model", type=Path, help="compiled .aimodelc or .mlmodelc se
 parser.add_argument("output", type=Path, help="new Sing.bundle directory, outside tracked source")
 parser.add_argument("--architecture", required=True, help="target device's Core AI architecture name, e.g. h18p")
 parser.add_argument("--foreground-gpu", action="store_true", help="Core ML: GPU in foreground, warm CPU in background")
+parser.add_argument("--unpinned", action="store_true",
+                    help="Core ML: accept an export made with other torch/coremltools versions (export_coreml.py "
+                         "--unpinned-tools); check it against the goldens before use")
 args = parser.parse_args()
 source, output = args.model.resolve(), args.output.resolve()
 if source.suffix not in (".aimodelc", ".mlmodelc") or not source.is_dir() or output.exists() or output.name != "Sing.bundle":
@@ -35,8 +38,8 @@ if cpu:
     for name in profile["payloadHashes"]:
         with (source / name).open("rb") as stream:
             actual[name] = hashlib.file_digest(stream, "sha256").hexdigest()
-    if actual not in (profile["payloadHashes"], profile["referencePayloadHashes"]):
-        parser.error("Core ML graph or weights differ from the pinned CPU exports")
+    if actual not in (profile["payloadHashes"], profile["referencePayloadHashes"]) and not args.unpinned:
+        parser.error("Core ML graph or weights differ from the pinned CPU exports (an unpinned export needs --unpinned)")
     source_hash = actual["model.mil"]
 else:
     profile = manifest["liveProfile"]

@@ -16,12 +16,17 @@ parser.add_argument("golden_raw", type=Path, help="original eight-second planar 
 parser.add_argument("output", type=Path, help="new local export directory")
 parser.add_argument("--precision", choices=("mixed", "float32"), default="mixed",
                     help="mixed CPU profile, or the full-precision comparison model")
+parser.add_argument("--unpinned-tools", action="store_true",
+                    help="export with the installed torch/coremltools; the result will not match the pinned "
+                         "payload hashes, so package it with package_model.py --unpinned")
 args = parser.parse_args()
 manifest = json.loads((Path(__file__).parent / "model.json").read_text())
 profile = manifest["cpuProfile"]
 for package, key in [("coremltools", "coremltoolsVersion"), ("torch", "torchVersion")]:
     if version(package) != profile[key]:
-        raise ValueError(f"{package} must be {profile[key]} for this export")
+        if not args.unpinned_tools:
+            raise ValueError(f"{package} must be {profile[key]} for this export (or pass --unpinned-tools)")
+        print(f"{package} {version(package)} instead of the pinned {profile[key]}: the export will not match the pinned hashes")
 
 def digest(path):
     with path.open("rb") as stream:

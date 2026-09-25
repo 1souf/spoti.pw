@@ -417,6 +417,24 @@ can specialize its compiled model on several devices; that does not certify thos
 Add `--foreground-gpu` when packaging that Core ML model to enable adaptive foreground GPU / background CPU
 execution. Omitting it keeps CPU-only execution. Both options use the same pinned spectral payloads.
 
+The pinned coremltools `9.1.dev1` is not on PyPI. With the public releases, export with
+`--unpinned-tools` and package with `--unpinned`: in a separate virtual environment, torch 2.9.0,
+coremltools 9.0 and numpy below 2.3 (numpy 2.5 makes coremltools 9.0 fail on a one-element cast),
+plus einops 0.6.1, beartype 0.14.1, rotary_embedding_torch 0.3.5, librosa and pyyaml. The pinned
+checkpoint (`MelBandRoformer.ckpt`, checked against `checkpointSHA256`), `golden_raw.f32` from the
+pinned Core AI revision and the two pinned checkouts are the same. Such an export's `weights/weight.bin`
+matched the pinned hash; only `model.mil` differs. On the golden window it gave cosine 0.999995 on
+the CPU and 1.000000 on CPU+GPU against PyTorch, and `test_worker.py` passed with it.
+
+```sh
+python harness/sing/export_coreml.py zoo ref MelBandRoformer.ckpt golden_raw.f32 export --unpinned-tools
+python3 harness/sing/package_model.py export/separator.mlmodelc out/Sing.bundle \
+  --architecture h18p --foreground-gpu --unpinned
+```
+
+`--architecture` is the phone's Core AI architecture name, which `make log` prints at launch
+("Sing: this iPhone's Core AI architecture is …"); an iPhone 17 Pro reports `h18p`.
+
 Pass `SING_MODEL_BUNDLE=/absolute/path/to/Sing.bundle` to the existing
 `scripts/pipeline.sh` or `make release`. The normal build remains usable without
 that optional resource. In the redesigned look, enable **Lyrics → Sing** and
