@@ -70,7 +70,7 @@ static NSString *const kLastRowsKey = @"spotifyglass.redesign.player.menuRows";
 static BOOL sgr_menuOn;
 static __weak UIView *sgr_moreButton;
 static NSTimeInterval sgr_moreTappedAt;
-static char kTakeoverKey, kWatchedKey, kDimmingKey, kMaskKey, kSavedMaskKey, kClaimKey, kTakenKey;
+static char kTakeoverKey, kWatchedKey, kDimmingKey, kMaskKey, kSavedMaskKey, kClaimKey, kTakenKey, kHiddenDimmingsKey;
 
 #pragma mark - where each of Spotify's rows goes
 
@@ -395,6 +395,47 @@ static UIView *dimmingIn(UIView *container) {
 // dimming's colour and alpha are what Spotify's transition animates, and iOS 26 draws a sheet's glass
 // through a mask of no size at all, so the mask is a point of nothing rather than empty. The sheet's own
 // mask, if it had one, is kept to put back. The catcher draws a lighter dimming of its own.
+//
+// UIKit's own dimming goes too, wherever the system sheet put it: in the sheet's container, where Spotify
+// hides it once the sheet is up (trees/continuous/1.txt: "UIDimmingView ... hidden"), and over the view the
+// sheet came up over, which UIKit wraps in a drop shadow view of its own with a UIDimmingView in it, black
+// at 0.48 (harness, 2026-09-24). Under Spotify's 0.7 neither showed; with Spotify's hidden, the screen went
+// dark for a moment as the ⋯ was tapped (device, 2026-09-24). They sit within three levels of the window.
+// Those outside the container are put back with the sheet; the container's stays hidden, as Spotify keeps it.
+static void hideSystemDimming(UIView *container) {
+    static Class dimmingClass;
+    if (!dimmingClass) dimmingClass = NSClassFromString(@"UIDimmingView");
+    UIWindow *window = container.window;
+    if (!dimmingClass || !window) return;
+    NSHashTable *hidden = objc_getAssociatedObject(container, &kHiddenDimmingsKey);
+    NSMutableArray<UIView *> *level = [window.subviews mutableCopy];
+    for (int depth = 0; depth < 3 && level.count; depth++) {
+        NSMutableArray<UIView *> *next = [NSMutableArray array];
+        for (UIView *view in level) {
+            if ([view isKindOfClass:dimmingClass]) {
+                if (view.hidden) continue;
+                view.hidden = YES;
+                if (view.superview != container) {
+                    if (!hidden) {
+                        hidden = [NSHashTable weakObjectsHashTable];
+                        objc_setAssociatedObject(container, &kHiddenDimmingsKey, hidden, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    }
+                    [hidden addObject:view];
+                }
+            } else {
+                [next addObjectsFromArray:view.subviews];
+            }
+        }
+        level = next;
+    }
+}
+
+static void showSystemDimming(UIView *container) {
+    NSHashTable *hidden = objc_getAssociatedObject(container, &kHiddenDimmingsKey);
+    for (UIView *view in hidden) view.hidden = NO;
+    objc_setAssociatedObject(container, &kHiddenDimmingsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 static void hidePresentation(UIView *sheet, UIView *container) {
     CALayer *mask = objc_getAssociatedObject(sheet, &kMaskKey);
     if (sheet && !mask) {
@@ -410,10 +451,12 @@ static void hidePresentation(UIView *sheet, UIView *container) {
     sheet.accessibilityElementsHidden = YES;
     UIView *dimming = dimmingIn(container);
     if (dimming && !dimming.hidden) dimming.hidden = YES;
+    hideSystemDimming(container);
 }
 
 static void showPresentation(UIView *sheet, UIView *container) {
     dimmingIn(container).hidden = NO;
+    showSystemDimming(container);
     id saved = objc_getAssociatedObject(sheet, &kSavedMaskKey);
     sheet.alpha = 0;
     sheet.hidden = NO;
@@ -751,6 +794,56 @@ static SGRPlayerMenuTakeover *takeoverFor(UIViewController *menu) {
     return t;
 }
 
+#pragma mark - what darkens the screen as the menu opens
+
+// A dark picture across the screen flashed as the menu opened on the phone, with the sheet and its dimming
+// out of sight from the presentation's first frame (device, 2026-09-24). So the first menus of a launch say
+// what they find at a few moments after the ⋯'s tap: every view drawn dark over most of the window, and the
+// windows themselves.
+static NSString *darkness(UIColor *color) {
+    CGFloat white = 1, alpha = 0;
+    if (!color || ![color getWhite:&white alpha:&alpha]) {
+        CGFloat r, g, b;
+        if (![color getRed:&r green:&g blue:&b alpha:&alpha]) return nil;
+        white = (r + g + b) / 3;
+    }
+    return alpha >= 0.3 && white < 0.15 ? [NSString stringWithFormat:@"%.2f@%.2f", white, alpha] : nil;
+}
+
+static void findDark(UIView *view, UIView *window, CGFloat alpha, int depth, NSMutableArray<NSString *> *out) {
+    if (view.hidden || view.alpha < 0.01 || depth > 40 || out.count > 20) return;
+    alpha *= view.alpha;
+    CGRect frame = [view convertRect:view.bounds toView:window];
+    CGRect screen = CGRectIntersection(frame, window.bounds);
+    BOOL covers = !CGRectIsNull(screen) && screen.size.width * screen.size.height > 0.6 * window.bounds.size.width * window.bounds.size.height;
+    if (!covers) return;
+    NSString *dark = darkness(view.backgroundColor) ?: (view.layer.backgroundColor ? darkness([UIColor colorWithCGColor:view.layer.backgroundColor]) : nil);
+    if (dark && alpha > 0.05) {
+        [out addObject:[NSString stringWithFormat:@"%@%@ bg %@ alpha %.2f", NSStringFromClass(view.class),
+                        view.accessibilityIdentifier.length ? [@" id=" stringByAppendingString:view.accessibilityIdentifier] : @"", dark, alpha]];
+    }
+    for (UIView *child in view.subviews) findDark(child, window, alpha, depth + 1, out);
+}
+
+static void logDarkness(UIView *anyView) {
+    static int menus;
+    if (menus++ >= 2) return;
+    for (NSNumber *after in @[@0, @0.02, @0.05, @0.1, @0.2, @0.4]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(after.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIWindowScene *scene = anyView.window.windowScene;
+            NSMutableArray<NSString *> *lines = [NSMutableArray array];
+            for (UIWindow *window in scene.windows) {
+                if (window.hidden) continue;
+                NSMutableArray<NSString *> *dark = [NSMutableArray array];
+                findDark(window, window, 1, 0, dark);
+                [lines addObject:[NSString stringWithFormat:@"%@ level %.0f: %@", NSStringFromClass(window.class), window.windowLevel,
+                                  dark.count ? [dark componentsJoinedByString:@"; "] : @"nothing dark over it"]];
+            }
+            SGLog(@"redesign player menu: %.2f s after the sheet began: %@", after.doubleValue, [lines componentsJoinedByString:@" | "]);
+        });
+    }
+}
+
 // The sheet and its dimming go out of sight as the presentation begins, before its first frame: the menu's
 // own appearance comes later than that, and hiding them only from there let the dimming's black and the sheet
 // show for a frame or two as the ⋯ was tapped (device, 2026-09-24). A presentation taken this way is claimed,
@@ -764,6 +857,7 @@ static SGRPlayerMenuTakeover *takeoverFor(UIViewController *menu) {
     if (!moreTappedRecently() || !holdsContextMenu(sheet, 0)) return;
     objc_setAssociatedObject(sheet, &kClaimKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     hidePresentation(presentation.presentedView, presentation.containerView);
+    logDarkness(presentation.containerView ?: presentation.presentingViewController.view);
     // A claimed sheet whose menu is never taken over would stay out of sight with nothing in its place.
     __weak UIPresentationController *weak = presentation;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kClaimWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

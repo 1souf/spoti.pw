@@ -174,6 +174,12 @@ static NSMutableArray<NSMutableArray<NSString *> *> *spotifyRows(void) {
 
 #pragma mark - Spotify's sheet presentation
 
+static void collect(UIView *view, NSString *className, NSMutableArray<UIView *> *out) {
+    if ([NSStringFromClass(view.class) isEqualToString:className]) [out addObject:view];
+    for (UIView *child in view.subviews) collect(child, className, out);
+}
+
+
 // NavigationUI_SheetImpl.SheetPresentationController: a sheet with a dimming view of Spotify's own, black
 // at 0.7 fading in with the transition, added as the presentation begins.
 @interface _TtC22NavigationUI_SheetImpl27SheetPresentationController : UISheetPresentationController
@@ -225,12 +231,20 @@ static BOOL onScreen(UIView *view) {
 - (void)tick:(CADisplayLink *)link {
     if (!self.start) self.start = link.timestamp;
     UIPresentationController *presentation = self.window.rootViewController.presentedViewController.presentationController;
-    UIView *dimming = nil;
+    // Spotify's dimming, and the system's UIDimmingViews wherever they are: in the sheet's container, and over
+    // the view the sheet came up over.
+    BOOL dim = NO;
     for (UIView *v in presentation.containerView.subviews) {
-        if ([v.accessibilityIdentifier isEqualToString:@"Components.UI.SheetPresentation.Dimming"]) dimming = v;
+        if ([v.accessibilityIdentifier isEqualToString:@"Components.UI.SheetPresentation.Dimming"] && onScreen(v)) dim = YES;
+    }
+    NSMutableArray<UIView *> *system = [NSMutableArray array];
+    collect(self.window, @"UIDimmingView", system);
+    for (UIView *v in system) {
+        CGFloat white = 0, alpha = 0;
+        [v.backgroundColor getWhite:&white alpha:&alpha];
+        if (onScreen(v) && alpha > 0.01) dim = YES;
     }
     BOOL sheet = presentation && onScreen(presentation.presentedView);
-    BOOL dim = dimming && onScreen(dimming) && dimming.alpha > 0.01;
     self.frames++;
     if (sheet || dim) {
         self.shown++;
@@ -306,10 +320,6 @@ static BOOL onScreen(UIView *view) {
 
 #pragma mark - reading what is on screen
 
-static void collect(UIView *view, NSString *className, NSMutableArray<UIView *> *out) {
-    if ([NSStringFromClass(view.class) isEqualToString:className]) [out addObject:view];
-    for (UIView *child in view.subviews) collect(child, className, out);
-}
 
 static UIView *find(UIView *root, NSString *className, NSString *label) {
     NSMutableArray<UIView *> *found = [NSMutableArray array];
@@ -395,6 +405,14 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
         [player.more sendActionsForControlEvents:UIControlEventTouchUpInside];
     });
     after(2.2, ^{ report(window, @"open"); });
+    if (argument(@"dimmings")) for (NSNumber *at in @[@1.05, @1.5, @4]) after(at.doubleValue, ^{
+        NSMutableArray<UIView *> *found = [NSMutableArray array];
+        collect(window, @"UIDimmingView", found);
+        NSMutableArray<NSString *> *lines = [NSMutableArray array];
+        for (UIView *v in found) [lines addObject:[NSString stringWithFormat:@"in %@ (%@) hidden %d alpha %.2f", NSStringFromClass(v.superview.class),
+                                                   v.superview == window.rootViewController.presentedViewController.presentationController.containerView ? @"the sheet's container" : @"elsewhere", v.hidden, v.alpha]];
+        NSLog(@"[harness] %.2f s: UIDimmingViews: %@", at.doubleValue, [lines componentsJoinedByString:@"; "]);
+    });
     if (argument(@"dump")) after(2.4, ^{
         NSMutableString *out = [NSMutableString string];
         dump(window.rootViewController.presentedViewController.presentationController.containerView, 0, out);
