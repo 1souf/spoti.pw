@@ -8,14 +8,15 @@
 // every other row dismisses the sheet, as Spotify's do. Speed and pitch are stubs that log.
 //
 //     THEOS=$HOME/theos ./build.sh && xcrun simctl install <udid> build/PlayerMenuHarness.app
-//     xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [scenario] [loading] [stuck]
+//     xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [scenario] [loading|slow|stuck]
 //
 // Scenarios, each starting with a tap on the ⋯ at 1 s: hold (nothing more), more (opens More at 3 s),
 // speed (opens Speed and pitch at 3 s), follow (opens it, then turns pitch following speed on at 4.5 s and
 // off at 9 s: the panel folds its pitch slider away and back, the card with it), tile (Add to playlist at 3 s), share (Share at 3 s: Spotify's page
 // is pushed and its sheet shown), lyrics (More, then Lyrics: the row reads On), outside (a tap beside the
-// card at 3 s), pending (with `loading`: Add to playlist tapped before Spotify's rows are in, fired once
-// they are). `loading` hands the sheet its rows 1.5 s after it is up; `stuck` never does. The card opens on
+// card at 3 s), pending (Add to playlist tapped before Spotify's rows are in: fired once they are with
+// `loading`, Spotify's sheet shown 4 s after the tap with `stuck`). `loading` hands the sheet its rows 1.5 s
+// after it is up, `slow` 7 s after, later than the card once waited; `stuck` never does. The card opens on
 // the rows of the run before, which the harness keeps in its defaults like the phone does.
 #import <UIKit/UIKit.h>
 
@@ -103,7 +104,7 @@ static NSMutableArray<NSMutableArray<NSString *> *> *spotifyRows(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:1];
-    self.loaded = !argument(@"loading") && !argument(@"stuck");
+    self.loaded = !argument(@"loading") && !argument(@"slow") && !argument(@"stuck");
     self.table = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
     self.table.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.table.backgroundColor = UIColor.clearColor;
@@ -116,7 +117,7 @@ static NSMutableArray<NSMutableArray<NSString *> *> *spotifyRows(void) {
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    if (argument(@"loading") && !self.loaded) after(1.5, ^{
+    if ((argument(@"loading") || argument(@"slow")) && !self.loaded) after(argument(@"slow") ? 7 : 1.5, ^{
         self.loaded = YES;
         [self.table reloadData];
         NSLog(@"[harness] the sheet has its rows");
@@ -399,9 +400,11 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
         dump(window.rootViewController.presentedViewController.presentationController.containerView, 0, out);
         NSLog(@"[harness] container:%@", out);
     });
-    if (argument(@"stuck")) {
-        after(6, ^{ report(window, @"no rows"); });
-        return;
+    // The card stays while Spotify's rows are late or never come; only a row tapped meanwhile gives it up.
+    if (argument(@"stuck")) after(6, ^{ report(window, @"no rows at 6 s"); });
+    if (argument(@"slow")) {
+        after(6, ^{ report(window, @"no rows yet at 6 s"); });
+        after(9, ^{ report(window, @"after the slow rows"); });
     }
     if (argument(@"more")) {
         after(3, ^{ tap(window, @"More"); });
@@ -435,6 +438,7 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
         // With `loading`: Add to playlist tapped on the last menu's rows before Spotify's are in.
         after(2.1, ^{ tap(window, @"Add to playlist"); });
         after(4, ^{ report(window, @"after the held tap"); });
+        after(7, ^{ report(window, @"5 s after the held tap"); });
     } else if (argument(@"outside")) {
         after(3, ^{
             NSMutableArray<UIView *> *found = [NSMutableArray array];

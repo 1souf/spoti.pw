@@ -28,8 +28,12 @@
 // On), which the card reads again. A tap outside the card dismisses the sheet, as a tap on Spotify's dimming
 // did.
 //
-// **Where it falls back** to Spotify's sheet as it was: no table in it, no rows within kRowsWait, and a row
-// that cannot be found again to fire.
+// **Where it falls back** to Spotify's sheet as it was: no table in it, rows in the table the card cannot
+// read, a row tapped before Spotify's rows are in that they are still not in kRowsWait later, and a row that
+// cannot be found again to fire. Spotify's rows take as long as its slowest item factory, up to
+// ios-feature-contextmenu-platform.timeout (10 s unless the server says otherwise), so the card waits for them
+// for as long as it is open: when it gave up at kRowsWait whatever was happening, a slow menu turned into
+// Spotify's sheet in the hand of someone moving Speed and pitch's sliders (device, 2026-09-25).
 //
 // **Opening at once.** Spotify's rows come in only once its item factories have answered, a moment after the
 // sheet is up, and a card that waited for them opened on a spinner (device, 2026-09-24). So the card opens
@@ -50,7 +54,8 @@
 
 // A sheet this soon after the ⋯'s tap is the player's.
 static const NSTimeInterval kMenuAfterTap = 3;
-// No rows by then and Spotify's own sheet is shown instead, with whatever it is showing.
+// A row tapped before Spotify's rows are in and still not fired by then, and Spotify's own sheet is shown
+// instead, with whatever it is showing; rows in the table the card still cannot read by then, likewise.
 static const NSTimeInterval kRowsWait = 4;
 // The black behind the card; Spotify's dimming is 0.7, which is a sheet's and not a menu's.
 static const CGFloat kDimming = 0.2;
@@ -347,6 +352,7 @@ static void keepRows(NSArray<SGRPlayerMenuSpotifyRow *> *rows, NSString *signatu
 // Showing the last menu's rows until Spotify's are in; a row tapped meanwhile, fired once they are.
 @property (nonatomic) BOOL provisional;
 @property (nonatomic, copy) NSString *pendingIdentifier;
+@property (nonatomic) NSTimeInterval pendingAt;
 // Spotify's rows as last read, by number, for a row of the card made from the last menu's to fire.
 @property (nonatomic, copy) NSDictionary<NSString *, SGRPlayerMenuSpotifyRow *> *rowsByIdentifier;
 @property (nonatomic) NSTimeInterval tappedAt;
@@ -474,6 +480,21 @@ static void reveal(SGRPlayerMenuTakeover *t, NSString *why) {
     t.closing = NO;
 }
 
+// A row tapped before Spotify's rows are in waits for them, and past kRowsWait it is Spotify's sheet that
+// is waited on instead, where the row can be tapped again once it is there.
+static void hold(SGRPlayerMenuTakeover *t, SGRPlayerMenuSpotifyRow *row) {
+    NSTimeInterval at = CACurrentMediaTime();
+    t.pendingIdentifier = row.identifier;
+    t.pendingAt = at;
+    SGLog(@"redesign player menu: \"%@\" (%@) tapped %.2f s after the ⋯, before Spotify's rows are in, held", row.title, row.identifier, at - t.tappedAt);
+    __weak SGRPlayerMenuTakeover *weak = t;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kRowsWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGRPlayerMenuTakeover *strong = weak;
+        if (!strong || !strong.pendingIdentifier || strong.pendingAt != at) return;
+        reveal(strong, [NSString stringWithFormat:@"a row was tapped and Spotify's rows are still not in %.0f s later", kRowsWait]);
+    });
+}
+
 #pragma mark building the card
 
 static SGRPlayerMenuItem *itemFor(SGRPlayerMenuTakeover *t, SGRPlayerMenuSpotifyRow *row, const SGRPlayerMenuKnownRow *known) {
@@ -484,8 +505,7 @@ static SGRPlayerMenuItem *itemFor(SGRPlayerMenuTakeover *t, SGRPlayerMenuSpotify
         SGRPlayerMenuTakeover *strong = weak;
         if (!strong) return;
         if (strong.provisional) {
-            strong.pendingIdentifier = identifier;
-            SGLog(@"redesign player menu: \"%@\" (%@) tapped before Spotify's rows are in, held", row.title, identifier);
+            hold(strong, row);
             return;
         }
         fire(strong, strong.rowsByIdentifier[identifier] ?: row);
@@ -714,10 +734,18 @@ static SGRPlayerMenuTakeover *takeoverFor(UIViewController *menu) {
         if (table && rowCount(table) > 0) pass(strong);
     }];
     [NSRunLoop.mainRunLoop addTimer:t.poll forMode:NSRunLoopCommonModes];
+    // Spotify's rows are waited on for as long as the card is open, the table looked at until they are all in.
+    // What is worth saying by kRowsWait is whether they are late, and whether they are there and unreadable.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kRowsWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         SGRPlayerMenuTakeover *strong = weak;
-        [strong.poll invalidate];
-        if (strong && !strong.hasRows) reveal(strong, [NSString stringWithFormat:@"no rows of Spotify's within %.0f s", kRowsWait]);
+        if (!strong || strong.hasRows || strong.closing || strong.revealed) return;
+        UITableView *table = tableIn(strong.menu.viewIfLoaded, 0);
+        if (table && rowCount(table) > 0) {
+            reveal(strong, [NSString stringWithFormat:@"the table has %ld rows and none could be read", (long)rowCount(table)]);
+            return;
+        }
+        SGLog(@"redesign player menu: no rows of Spotify's %.0f s after the tap, still waiting with %@", kRowsWait,
+              strong.provisional ? @"the last menu's rows" : @"a spinner");
     });
     SGLog(@"redesign player menu: the ⋯'s sheet taken over");
     return t;

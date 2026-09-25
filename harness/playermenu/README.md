@@ -8,10 +8,11 @@ dismisses the sheet. Speed and pitch are stubs that log.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/PlayerMenuHarness.app
-    xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [hold|more|speed|follow|tile|share|lyrics|outside|pending] [loading|stuck] [dump]
+    xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [hold|more|speed|follow|tile|share|lyrics|outside|pending] [loading|slow|stuck] [dump]
 
 Every run taps the ⋯ at 1 s and reports the card, its rows top to bottom and whether Spotify's sheet is out
 of sight at 2.2 s; the scenario then taps something on the card at 3 s and reports again. `loading` hands
-the sheet its rows 1.5 s after it is up, `stuck` never does, `pending` (with `loading`) taps Add to playlist
-on the last run's rows before Spotify's are in (the sheet is shown after 4 s), `dump` logs the
-presentation's container.
+the sheet its rows 1.5 s after it is up and `slow` 7 s after; `stuck` never does, and the card stays either
+way. `pending` taps Add to playlist on the last run's rows before Spotify's are in: with `loading` it is fired
+once they are, with `stuck` Spotify's sheet is shown 4 s after the tap. `dump` logs the presentation's
+container.
