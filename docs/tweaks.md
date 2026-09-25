@@ -115,8 +115,8 @@ Shared:
                   the render thread never waits for them. Unsupported formats retain Spotify's connection. The PCM
                   packet queue is bounded and generation-stamped. Sing's source read-ahead reads guarded queue metadata
                   for the verified Spotify binary; PCM still comes through its AudioUnit. Boundary tests are in harness/audio/ and harness/sing/
-    Sing/         the local Core AI / Core ML separator, source-domain audio adapter, worker and player lifecycle. Core ML
-                  can use the GPU in the foreground and its warm CPU model in the background. The audible
+    Sing/         the local Core ML separator, source-domain audio adapter, worker and player lifecycle, from iOS 27. Core ML
+                  uses the GPU in the foreground and its warm CPU model in the background. The audible
                   clock follows emitted source samples while delayed audio drains. Model loading overlaps source capture;
                   verified continuous next-track PCM keeps its worker and reserve across a natural transition.
                   Redesigned/Lyrics owns the

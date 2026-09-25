@@ -89,8 +89,7 @@ FILES=("$TWEAK_DEB")
 # Optional local voice model, produced by harness/sing/package_model.py. No download at build or
 # playback time. Without this resource Sing remains unavailable and its setting defaults off.
 if [ -n "${SING_MODEL_BUNDLE:-}" ]; then
-  { [ -d "$SING_MODEL_BUNDLE/separator.aimodelc" ] || [ -d "$SING_MODEL_BUNDLE/separator.mlmodelc" ]; } \
-    && [ -f "$SING_MODEL_BUNDLE/hashes.json" ] && [ -f "$SING_MODEL_BUNDLE/Sing.plist" ] \
+  [ -d "$SING_MODEL_BUNDLE/separator.mlmodelc" ] \
     || { echo "invalid SING_MODEL_BUNDLE: package the local compiled model first" >&2; exit 1; }
   FILES+=("$SING_MODEL_BUNDLE")
 fi
@@ -143,8 +142,6 @@ if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"
   "$ROOT/scripts/merge-appintents.py" "$OUT" "$APP_DIR" "$EXT_DIR/app/Metadata.appintents"
 fi
-
-python3 "$ROOT/harness/sing/configure_background.py" "$OUT"
 
 echo "==> done: $OUT"
 [ "$INSTALL" = 1 ] && exec "$ROOT/scripts/install.sh" "$OUT"

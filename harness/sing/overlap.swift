@@ -10,12 +10,11 @@ import Foundation
         }
     }
     static func main() async throws {
-        guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 5 else { fatalError("overlap <short-assets> <reference-assets> <report.json> [hop-samples]") }
-        let short = URL(fileURLWithPath: CommandLine.arguments[1])
+        guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 5 else { fatalError("overlap <separator.mlmodelc> <reference-assets> <report.json> [hop-samples]") }
         let reference = URL(fileURLWithPath: CommandLine.arguments[2])
-        let hashes = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: short.appendingPathComponent("hashes.json")))
-        let separator = try await SGStemSeparator(modelURL: short.appendingPathComponent("mbr_full_fp16.aimodel"), payloadHashes: hashes)
-        let chunk = separator.chunkSamples
+        let separator = try await SGStemSeparator(modelURL: URL(fileURLWithPath: CommandLine.arguments[1]))
+        try await separator.warmUp()
+        let chunk = separator.windowFrames
         let hop = CommandLine.arguments.count == 5 ? Int(CommandLine.arguments[4])! : chunk * 3 / 4
         let worker = try SGStemWindowProcessor(chunkSamples: chunk, hopSamples: hop) { try await separator.vocals(for: $0) }
         await worker.reset(generation: 1, track: 1, format: 1)

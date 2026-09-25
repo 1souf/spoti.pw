@@ -9,6 +9,7 @@ typedef NS_ENUM(NSUInteger, SGSingState) {
     SGSingReady, // the local model is loaded; playback has not supplied audio yet
     SGSingRecovering // aligned original audio while a temporarily late worker catches up
 };
+BOOL SGSingSupported(void); // iOS 27, the first the separator runs on
 void SGSingConfigure(BOOL enabled);
 BOOL SGSingConfigured(void);
 SGSingState SGSingCurrentState(void);

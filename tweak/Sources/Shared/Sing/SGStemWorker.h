@@ -9,15 +9,12 @@ typedef int32_t (*SGStemRead)(void *context, float *pcm, uint64_t *metadata);
 typedef int32_t (*SGStemWrite)(void *context, const float *pcm, uint32_t frames,
                               uint64_t generation, uint64_t track, uint64_t sourceFrame, uint32_t format);
 typedef void (*SGStemStatus)(void *context, int32_t status);
-// Returns an owned cancellation handle, or NULL when this OS has no supported runtime. Cancel
-// releases that handle exactly once. Finished is called once even when cancellation interrupts load.
-void *SGStemWorkerStart(void *context, const char *modelPath, const char *hashesPath, uint32_t hopFrames,
+// Loads the compiled Core ML model at modelPath (or shares the one still warm) and separates windows of
+// windowFrames, a hop of hopFrames apart; a model made for another window fails. Returns an owned
+// cancellation handle, or NULL below iOS 27. Cancel releases that handle exactly once. Finished is
+// called once even when cancellation interrupts load.
+void *SGStemWorkerStart(void *context, const char *modelPath, uint32_t windowFrames, uint32_t hopFrames,
                        SGStemRead read, SGStemWrite write, SGStemStatus status);
 void SGStemWorkerCancel(void *handle, int32_t unload);
-
-int32_t SGStemArchitectureMatches(const char *architecture);
-// This device's Core AI architecture name (what package_model.py's --architecture wants) into `name`,
-// 0 below iOS 27 or when it does not fit.
-int32_t SGStemArchitectureName(char *name, int32_t size);
-
+// Drops the warm model at once, for memory, heat, or a model about to be removed.
 void SGStemWorkerPurge(void);

@@ -1,8 +1,5 @@
 // Standalone model measurements on iPhone. This does not run Spotify or validate live audio.
 import UIKit
-#if canImport(CoreAI)
-import CoreAI
-#endif
 import Darwin
 import os
 
@@ -80,21 +77,19 @@ enum Benchmark {
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         guard initialThermal < 2 else { return "Thermal hold: device is already Serious or Critical before loading the model." }
         let root = Bundle.main.bundleURL.appendingPathComponent("Assets")
-        let hashes = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appendingPathComponent("hashes.json")))
-        let cpu = FileManager.default.fileExists(atPath: root.appendingPathComponent("separator.mlmodelc").path)
-        let modelURL = root.appendingPathComponent(cpu ? "separator.mlmodelc" : "separator.aimodelc")
-        let sourceHash = hashes[cpu ? "model.mil" : "main.hash"] ?? "unknown"
+        let modelURL = root.appendingPathComponent("separator.mlmodelc")
+        let sourceHash = (try? String(contentsOf: root.appendingPathComponent("model-source.txt"), encoding: .utf8)) ?? "unknown"
         let requestedHop = UserDefaults.standard.object(forKey: "hopSeconds") == nil ? 1.5 : UserDefaults.standard.double(forKey: "hopSeconds")
         guard requestedHop.isFinite, requestedHop >= 0.5, requestedHop <= 2 else { throw SGStemError.invalidInput }
         let clock = ContinuousClock(), start = clock.now
-        let preferForegroundGPU = cpu && UserDefaults.standard.bool(forKey: "foregroundGPU")
-        let backend = cpu ? (preferForegroundGPU ? "CoreMLAdaptive" : "CoreMLCPU") : "CoreAI"
-        let separator = try await SGStemSeparator(modelURL: modelURL, payloadHashes: hashes,
-            preferForegroundGPU: preferForegroundGPU)
+        // GPU while this app is active, the CPU once it is not: what Sing does inside Spotify.
+        let backend = "Core ML, CPU and GPU in the foreground, CPU in the background"
+        let separator = try await SGStemSeparator(modelURL: modelURL)
+        try await separator.warmUp()
         let load = seconds(clock.now - start)
         let minimumMemoryBefore = os_proc_available_memory()
         var minimumMemory = minimumMemoryBefore
-        let count = separator.chunkSamples
+        let count = separator.windowFrames
         let raw = try floats(root.appendingPathComponent("golden_raw.f32"))
         let reference = try floats(root.appendingPathComponent("golden_vocals.f32"))
         guard raw.count == count * 2, reference.count == raw.count else { throw SGStemError.invalidInput }
@@ -141,17 +136,12 @@ enum Benchmark {
             if i == windows - 1 { status = "complete" }
         }
         var usage = rusage(); getrusage(RUSAGE_SELF, &usage)
-        #if canImport(CoreAI)
-        let architecture = AIModel.deviceArchitectureName
-        #else
-        let architecture = "unavailable"
-        #endif
         #if targetEnvironment(simulator)
         let platform = "iOS Simulator"
         #else
         let platform = "iOS device"
         #endif
-        let report: [String: Any] = ["architecture": architecture, "platform": platform,
+        let report: [String: Any] = ["platform": platform,
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "hopSeconds": requestedHop, "modelSourceHash": sourceHash, "backend": backend,
             "status": status, "scope": "model-only; not Spotify playback", "completedWindows": times.count,

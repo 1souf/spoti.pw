@@ -26,13 +26,13 @@ import Foundation
                 "evaluationSeconds": Double(last-first)/88200]
     }
     static func main() async throws {
-        guard CommandLine.arguments.count == 5 || CommandLine.arguments.count == 6 else { fatalError("corpus <model> <hashes.json> <corpus directory> <output directory> [hop-samples]") }
-        let args = CommandLine.arguments, root = URL(fileURLWithPath: args[3]), out = URL(fileURLWithPath: args[4])
+        guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 5 else { fatalError("corpus <separator.mlmodelc> <corpus directory> <output directory> [hop-samples]") }
+        let args = CommandLine.arguments, root = URL(fileURLWithPath: args[2]), out = URL(fileURLWithPath: args[3])
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        let hashes = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: args[2])))
-        let separator = try await SGStemSeparator(modelURL: URL(fileURLWithPath: args[1]), payloadHashes: hashes)
-        let size = separator.chunkSamples
-        let hop = args.count == 6 ? Int(args[5])! : size * 3 / 4
+        let separator = try await SGStemSeparator(modelURL: URL(fileURLWithPath: args[1]))
+        try await separator.warmUp()
+        let size = separator.windowFrames
+        let hop = args.count == 5 ? Int(args[4])! : size * 3 / 4
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("manifest.json"))) as! [String: Any]
         let tracks = manifest["tracks"] as! [[String: Any]]
         var reports: [[String: Any]] = []
@@ -43,24 +43,13 @@ import Foundation
             guard mix.count == reference.count, mix.count > 6*44100 else { throw SGStemError.invalidInput }
             let clock = ContinuousClock(), started = clock.now
             var vocals: [Float] = []
-            if size == 352800 {
-                let count = mix.count/2
-                guard count <= size else { throw SGStemError.invalidInput }
-                var padded = mix
-                for n in count..<size {
-                    let reflected = max(0, 2*count-2-n)
-                    padded.append(mix[reflected*2]); padded.append(mix[reflected*2+1])
-                }
-                vocals = Array(try await separator.vocals(for: padded).prefix(mix.count))
-            } else {
-                let worker = try SGStemWindowProcessor(chunkSamples: size, hopSamples: hop) { pcm in try await separator.vocals(for: pcm) }
-                let generation = UInt64(index+1)
-                await worker.reset(generation: generation, track: generation, format: 1)
-                for at in stride(from: 0, through: mix.count/2-size, by: hop) {
-                    let result = try await worker.process(Array(mix[at*2..<(at+size)*2]), sourceFrame: UInt64(at),
-                        generation: generation, track: generation, format: 1)
-                    vocals.append(contentsOf: result.vocals)
-                }
+            let worker = try SGStemWindowProcessor(chunkSamples: size, hopSamples: hop) { pcm in try await separator.vocals(for: pcm) }
+            let generation = UInt64(index+1)
+            await worker.reset(generation: generation, track: generation, format: 1)
+            for at in stride(from: 0, through: mix.count/2-size, by: hop) {
+                let result = try await worker.process(Array(mix[at*2..<(at+size)*2]), sourceFrame: UInt64(at),
+                    generation: generation, track: generation, format: 1)
+                vocals.append(contentsOf: result.vocals)
             }
             guard vocals.count > 2*44100, vocals.allSatisfy(\.isFinite) else { throw SGStemError.invalidOutput }
             try vocals.withUnsafeBytes { try Data($0).write(to: out.appendingPathComponent(id + "-vocals.f32")) }

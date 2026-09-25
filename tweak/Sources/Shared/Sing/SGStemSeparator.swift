@@ -1,175 +1,148 @@
-// Local-only Mel Band RoFormer adapter. Core ML uses worker-side FFTs and CPU background
-// inference; Core AI includes its transforms. No downloads or calls from RemoteIO.
-// Graph contract/provenance: harness/sing/README.md and harness/sing/model.json.
+// Sing's separator: the Mel-Band RoFormer vocal model (harness/sing/model.json has its provenance) run by
+// Core ML on this iPhone. The compiled graph is the model's spectral core alone: the worker takes the STFT
+// and its inverse with Accelerate (SGStemSpectralDSP.swift), and Core ML turns one two-second spectrum into
+// the spectrum of its vocals. The same model is loaded twice, once for the CPU, which is all iOS lets an app
+// in the background use, and once for the CPU and the GPU, used while Spotify is the active app. Nothing
+// here runs on the render thread or on UIKit's, and no audio leaves the process.
+import CoreML
 import Foundation
-import CryptoKit
-#if canImport(CoreAI)
-import CoreAI
+#if canImport(UIKit)
+import UIKit
 #endif
 
-@available(iOS 27.0, macOS 27.0, *)
 enum SGStemError: Error {
-    case invalidModel, hashMismatch, invalidInput, invalidOutput, cancelled
+    case invalidModel, invalidInput, invalidOutput
+}
+
+// The one shape the model has. The C side (Shared/Sing/SGSingFormat.h) names the same window, and
+// SGStemWorkerStart checks the loaded model against the window it is given.
+enum SGStemShape {
+    static let fftSize = 2048, stftHop = 441, stftFrames = 201
+    static let bins = fftSize / 2 + 1
+    static let windowFrames = (stftFrames - 1) * stftHop   // 88200, two seconds at 44.1 kHz
+    // [1, real and imaginary of each bin for each channel, frame, 2], float32 in and out.
+    static let spectrum: [Int] = [1, bins * 2, stftFrames, 2]
+    static let spectrumCount = spectrum.reduce(1, *)
 }
 
 @available(iOS 27.0, macOS 27.0, *)
 actor SGStemSeparator {
-    static let sampleRate = 44_100
-    #if canImport(CoreAI)
-    private let function: InferenceFunction?
-    private let input: NDArrayDescriptor?
-    #endif
-    private let coreML: SGStemCoreMLSeparator?
-    let chunkSamples: Int
-    private let frameCount: Int
-    private let normalization: [Float]
-    private var generation: UInt64 = 0
+    let windowFrames = SGStemShape.windowFrames
+    private let cpu: MLModel
+    private var gpu: MLModel?            // nil when it could not be loaded; the CPU model then does everything
+    private var gpuFailed = false        // a GPU prediction failed since Spotify was last inactive
+    private var lastAccelerated: Bool?
+    private let dsp: SGStemSpectralDSP
+    private let tensor: MLMultiArray
+    private let provider: MLDictionaryFeatureProvider
     private var running = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
-    private let fftSize = 2048, hop = 441, pad = 1024
 
-    // Verify the graph's payload before its runtime sees it. Hashing and model specialization happen
-    // on this actor, outside playback-critical paths. An AOT profile must verify all its payloads.
-    init(modelURL: URL, payloadHashes: [String: String], preferForegroundGPU: Bool = false) async throws {
-        guard !payloadHashes.isEmpty else { throw SGStemError.invalidModel }
-        for (relative, expected) in payloadHashes {
-            guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains("..") else {
-                throw SGStemError.invalidModel
-            }
-            let url = modelURL.appendingPathComponent(relative)
-            let file = try FileHandle(forReadingFrom: url)
-            defer { try? file.close() }
-            var digest = SHA256()
-            while let data = try file.read(upToCount: 1 << 20), !data.isEmpty { digest.update(data: data) }
-            let actual = digest.finalize().map { String(format: "%02x", $0) }.joined()
-            guard actual == expected else { throw SGStemError.hashMismatch }
-        }
+    init(modelURL: URL) async throws {
+        let cpuOnly = MLModelConfiguration()
+        cpuOnly.computeUnits = .cpuOnly
+        let cpu = try await MLModel.load(contentsOf: modelURL, configuration: cpuOnly)
         try Task.checkCancellation()
-        if modelURL.pathExtension == "mlmodelc" {
-            let coreML = try await SGStemCoreMLSeparator(modelURL: modelURL, preferForegroundGPU: preferForegroundGPU)
-            // Core ML's first prediction can allocate/specialize beyond model loading. Pay
-            // that cost before announcing Ready, while Spotify still plays its original audio.
-            // The warm model store shares this work; seeks do not repeat it.
-            try await coreML.warmUp()
+        let shape = SGStemShape.spectrum.map(NSNumber.init(value:))
+        let description = cpu.modelDescription
+        guard description.stateDescriptionsByName.isEmpty,
+              description.inputDescriptionsByName.count == 1, description.outputDescriptionsByName.count == 1,
+              let input = description.inputDescriptionsByName["spectrum"]?.multiArrayConstraint,
+              let output = description.outputDescriptionsByName["vocals_spectrum"]?.multiArrayConstraint,
+              input.shape == shape, output.shape == shape,
+              input.dataType == .float32, output.dataType == .float32 else { throw SGStemError.invalidModel }
+        let tensor = try MLMultiArray(shape: shape, dataType: .float32)
+        guard tensor.strides.map(\.intValue) == Self.strides else { throw SGStemError.invalidInput }
+        self.tensor = tensor
+        self.provider = try MLDictionaryFeatureProvider(dictionary: ["spectrum": tensor])
+        self.cpu = cpu
+        self.dsp = try SGStemSpectralDSP()
+        let accelerated = MLModelConfiguration()
+        accelerated.computeUnits = .cpuAndGPU
+        // Without the GPU copy the CPU one still does the work, only more slowly in the foreground.
+        do { self.gpu = try await MLModel.load(contentsOf: modelURL, configuration: accelerated) }
+        catch {
             try Task.checkCancellation()
-            self.coreML = coreML
-            #if canImport(CoreAI)
-            self.function = nil; self.input = nil
-            #endif
-            self.frameCount = 201; self.chunkSamples = 88200; self.normalization = []
-            return
+            NSLog("[spotifyglass] Sing foreground acceleration unavailable: %@", String(describing: error))
         }
-        self.coreML = nil
-        #if canImport(CoreAI)
-        let model = try await AIModel(contentsOf: modelURL, options: SpecializationOptions(preferredComputeUnitKind: .gpu))
-        try Task.checkCancellation()
-        guard let descriptor = model.functionDescriptor(for: "main"), descriptor.stateNames.isEmpty,
-              case .ndArray(let input) = descriptor.inputDescriptor(of: "frames"),
-              case .ndArray(let output) = descriptor.outputDescriptor(of: "recon"),
-              input.shape.count == 4, input.shape[0] == 1, input.shape[1] == 2,
-              input.shape[3] == 2048, input.shape[2] >= 101, input.shape[2] <= 801,
-              input.shape == output.shape, input.scalarType == .float16 || input.scalarType == .float32,
-              let function = try model.loadFunction(named: "main") else { throw SGStemError.invalidModel }
-        self.function = function
-        self.input = input
-        self.frameCount = input.shape[2]
-        self.chunkSamples = (input.shape[2] - 1) * 441
-        let total = 2048 + (input.shape[2] - 1) * 441
-        var weights = [Float](repeating: 0, count: total)
-        for f in 0..<input.shape[2] {
-            for n in 0..<2048 {
-                let window = 0.5 - 0.5 * cos(2 * Float.pi * Float(n) / 2048)
-                weights[f * 441 + n] += window * window
-            }
-        }
-        self.normalization = weights
-        #else
-        throw SGStemError.invalidModel
-        #endif
     }
 
-    func invalidate() { generation &+= 1 }
+    // A packed row-major tensor: what encode writes and decode reads.
+    private static let strides: [Int] = SGStemShape.spectrum.indices.map {
+        SGStemShape.spectrum[($0 + 1)...].reduce(1, *)
+    }
+
+    // Core ML's first prediction allocates and specializes beyond loading, so it is paid here, before the
+    // worker says Ready, while Spotify still plays its own audio. Both copies are warmed, so going to the
+    // background or coming back never meets a cold model in the middle of the reduced mix.
+    func warmUp() async throws {
+        try encode([Float](repeating: 0, count: windowFrames * 2))
+        _ = try predict(accelerated: false)
+        if gpu != nil, await foreground() { _ = try predict(accelerated: true) }
+    }
+
+    // One window of stereo interleaved PCM in, its vocals out; the instrumental is the mix less these. The
+    // streaming worker overlaps consecutive windows itself (SGStemWindowProcessor.swift).
+    func vocals(for pcm: [Float]) async throws -> [Float] {
+        guard pcm.count == windowFrames * 2, pcm.allSatisfy(\.isFinite) else { throw SGStemError.invalidInput }
+        // Asking UIKit whether Spotify is active suspends this actor, and another window may come in
+        // meanwhile. The two share one input tensor, so they take turns.
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        let active = gpu != nil ? await foreground() : false
+        if !active { gpuFailed = false }
+        try encode(pcm)
+        let accelerated = active && !gpuFailed
+        if lastAccelerated != accelerated {
+            NSLog("[spotifyglass] Sing Core ML compute policy: %@", accelerated ? "foreground CPU/GPU" : "CPU only")
+            lastAccelerated = accelerated
+        }
+        return try predict(accelerated: accelerated)
+    }
 
     private func acquire() async {
         if running { await withCheckedContinuation { waiters.append($0) } }
         else { running = true }
     }
+
     private func release() {
         if waiters.isEmpty { running = false }
         else { waiters.removeFirst().resume() }
     }
 
-    // Stereo interleaved PCM in and vocals out. Instrumental is mix - vocals, without normalization.
-    // This is one native graph window; the streaming host must do a second overlap-add between
-    // windows. It must not pass an eight-second window off as a low-latency live separator.
-    func vocals(for pcm: [Float]) async throws -> [Float] {
-        guard pcm.count == chunkSamples * 2, pcm.allSatisfy(\.isFinite) else { throw SGStemError.invalidInput }
-        // Actor methods can reenter during run(). A new seek generation must wait asynchronously
-        // for the old inference to finish before reusing this warm function.
-        await acquire()
-        defer { release() }
-        let ticket = generation
-        try Task.checkCancellation()
-        if let coreML {
-            let result = try await coreML.vocals(for: pcm)
-            try Task.checkCancellation()
-            guard ticket == generation else { throw SGStemError.cancelled }
-            return result
-        }
-        #if canImport(CoreAI)
-        guard let input, let function else { throw SGStemError.invalidModel }
-        let count = 2 * frameCount * fftSize
-        var framed = [Float](repeating: 0, count: count)
-        for channel in 0..<2 {
-            for frame in 0..<frameCount {
-                let origin = frame * hop - pad
-                for n in 0..<fftSize {
-                    let index = origin + n
-                    let reflected = index < 0 ? -index : index >= chunkSamples ? 2 * chunkSamples - 2 - index : index
-                    framed[(channel * frameCount + frame) * fftSize + n] = pcm[reflected * 2 + channel]
-                }
-            }
-        }
-        var tensor = NDArray(descriptor: input)
-        if input.scalarType == .float16 {
-            var view = tensor.mutableView(as: Float16.self)
-            view.copyElements(fromContentsOf: framed.map(Float16.init))
-        } else {
-            var view = tensor.mutableView(as: Float.self)
-            view.copyElements(fromContentsOf: framed)
-        }
-        var result = try await function.run(inputs: ["frames": tensor])
-        try Task.checkCancellation()
-        guard ticket == generation else { throw SGStemError.cancelled }
-        guard let recon = result.remove("recon")?.ndArray, recon.shape == input.shape else { throw SGStemError.invalidOutput }
-        let values: [Float]
-        switch recon.scalarType {
-        case .float16:
-            values = recon.view(as: Float16.self).withUnsafePointer { pointer, _, _ in
-                UnsafeBufferPointer(start: pointer, count: count).map(Float.init)
-            }
-        case .float32:
-            values = recon.view(as: Float.self).withUnsafePointer { pointer, _, _ in
-                Array(UnsafeBufferPointer(start: pointer, count: count))
-            }
-        default: throw SGStemError.invalidOutput
-        }
-        guard values.allSatisfy(\.isFinite) else { throw SGStemError.invalidOutput }
-        var vocals = [Float](repeating: 0, count: pcm.count)
-        for channel in 0..<2 {
-            var accumulator = [Float](repeating: 0, count: normalization.count)
-            for frame in 0..<frameCount {
-                for n in 0..<fftSize {
-                    accumulator[frame * hop + n] += values[(channel * frameCount + frame) * fftSize + n]
-                }
-            }
-            for n in 0..<chunkSamples {
-                vocals[n * 2 + channel] = accumulator[n + pad] / max(normalization[n + pad], 1e-8)
-            }
-        }
-        return vocals
+    private func foreground() async -> Bool {
+        #if canImport(UIKit)
+        return await MainActor.run { UIApplication.shared.applicationState == .active }
         #else
-        throw SGStemError.invalidModel
+        return true
         #endif
+    }
+
+    private func encode(_ pcm: [Float]) throws {
+        try dsp.encode(pcm, into: UnsafeMutableBufferPointer(
+            start: tensor.dataPointer.assumingMemoryBound(to: Float.self), count: tensor.count))
+    }
+
+    private func predict(accelerated: Bool) throws -> [Float] {
+        try Task.checkCancellation()
+        let result: MLFeatureProvider
+        if accelerated, let gpu {
+            do { result = try gpu.prediction(from: provider) }
+            catch {
+                try Task.checkCancellation()
+                // Going to the background can race the foreground check, and iOS then refuses the GPU.
+                // The same window goes to the warm CPU model with its timestamp kept, and the GPU is not
+                // asked again until Spotify has been inactive.
+                gpuFailed = true
+                NSLog("[spotifyglass] Sing using CPU after foreground prediction failed: %@", String(describing: error))
+                result = try cpu.prediction(from: provider)
+            }
+        } else { result = try cpu.prediction(from: provider) }
+        try Task.checkCancellation()
+        guard let output = result.featureValue(for: "vocals_spectrum")?.multiArrayValue,
+              output.shape.map(\.intValue) == SGStemShape.spectrum, output.dataType == .float32,
+              output.strides.map(\.intValue) == Self.strides else { throw SGStemError.invalidOutput }
+        return try dsp.decode(UnsafeBufferPointer(start: output.dataPointer.assumingMemoryBound(to: Float.self), count: output.count))
     }
 }

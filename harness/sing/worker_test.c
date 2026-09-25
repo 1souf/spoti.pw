@@ -70,13 +70,13 @@ static int32_t source(void *context, uint32_t frames, float *pcm) {
 }
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec/1e9; }
 int main(int argc, char **argv) {
-    assert(argc >= 4 && argc <= 6); // model, hashes, golden input, optional cancel tick and stalled-output case
-    bool cancelLoading = argc == 5 && !strcmp(argv[4], "--cancel-loading");
-    bool cold = argc == 5 && !strcmp(argv[4], "--cold");
-    unsigned cancelAt = argc >= 5 && !cancelLoading && !cold ? (unsigned)atoi(argv[4]) : cold ? 2400 : 1200;
-    injectStall = argc == 6;
+    assert(argc >= 3 && argc <= 5); // model, golden input, optional cancel tick and stalled-output case
+    bool cancelLoading = argc == 4 && !strcmp(argv[3], "--cancel-loading");
+    bool cold = argc == 4 && !strcmp(argv[3], "--cold");
+    unsigned cancelAt = argc >= 4 && !cancelLoading && !cold ? (unsigned)atoi(argv[3]) : cold ? 2400 : 1200;
+    injectStall = argc == 5;
     assert(cancelAt >= 200 && cancelAt <= 2400);
-    FILE *file = fopen(argv[3], "rb"); assert(file);
+    FILE *file = fopen(argv[2], "rb"); assert(file);
     fseek(file, 0, SEEK_END); long bytes = ftell(file); rewind(file);
     assert(bytes > 0 && bytes % 8 == 0);
     fixture = malloc(bytes); assert(fixture && fread(fixture, 1, bytes, file) == (size_t)bytes); fclose(file);
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
     stream = SGSingStreamCreate((SGAudioStamp){1,2,0,3,0}, 88200, 66150, 1); assert(stream);
     SGSingStreamSetModelReady(stream, false);
     loadStarted = now();
-    void *worker = SGStemWorkerStart(stream, argv[1], argv[2], 66150, readInput, writeOutput, report); assert(worker);
+    void *worker = SGStemWorkerStart(stream, argv[1], 88200, 66150, readInput, writeOutput, report); assert(worker);
     double deadline = now()+60;
     if (cancelLoading) {
         while (!atomic_load(&loading) && now() < deadline) usleep(1000);

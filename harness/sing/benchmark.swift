@@ -13,22 +13,14 @@ struct Benchmark {
         }
     }
     static func main() async throws {
-        guard CommandLine.arguments.count >= 3 else { fatalError("benchmark <assets> <report.json> [hashes.json] [model name] [--foreground-gpu]") }
-        let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        guard CommandLine.arguments.count == 4 else { fatalError("benchmark <separator.mlmodelc> <goldens directory> <report.json>") }
+        let root = URL(fileURLWithPath: CommandLine.arguments[2])
         let clock = ContinuousClock(), started = clock.now
-        var hashes = [
-            "main.mlirb": "bee41aeed2beefaa413bc1531f7dd3aa787655f8053364617fbce76a378e487f"
-        ]
-        if CommandLine.arguments.count > 3 {
-            hashes = try JSONDecoder().decode([String: String].self, from: Data(contentsOf:
-                URL(fileURLWithPath: CommandLine.arguments[3])))
-        }
-        let name = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "mbr_full_fp16.aimodel"
-        let preferForegroundGPU = CommandLine.arguments.contains("--foreground-gpu")
-        let separator = try await SGStemSeparator(modelURL: root.appendingPathComponent(name), payloadHashes: hashes,
-            preferForegroundGPU: preferForegroundGPU)
+        // On the Mac the separator counts as in the foreground, so this measures the CPU and GPU copy.
+        let separator = try await SGStemSeparator(modelURL: URL(fileURLWithPath: CommandLine.arguments[1]))
+        try await separator.warmUp()
         let load = seconds(clock.now - started)
-        let samples = separator.chunkSamples
+        let samples = separator.windowFrames
         let raw = try floats(root.appendingPathComponent("golden_raw.f32"))
         let golden = try floats(root.appendingPathComponent("golden_vocals.f32"))
         guard raw.count == 2 * samples, golden.count == raw.count else { fatalError("wrong golden shape") }
@@ -83,7 +75,7 @@ struct Benchmark {
         let platform = "macOS"
         #endif
         let report: [String: Any] = [
-            "foregroundGPUEnabled": preferForegroundGPU, "platform": platform, "os": ProcessInfo.processInfo.operatingSystemVersionString,
+            "platform": platform, "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "chunkSamples": samples, "chunkSeconds": collect, "loadSeconds": load,
             "inferenceSeconds": times, "cosine": cosine, "rmsRatio": rmsRatio,
             "edgeInputPeaks": edgePeaks,
@@ -95,7 +87,7 @@ struct Benchmark {
             "liveValidated": false
         ]
         let json = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
-        let destination = URL(fileURLWithPath: CommandLine.arguments[2])
+        let destination = URL(fileURLWithPath: CommandLine.arguments[3])
         try json.write(to: destination)
         print(String(decoding: json, as: UTF8.self))
     }

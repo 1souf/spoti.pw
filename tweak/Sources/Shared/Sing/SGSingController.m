@@ -1,8 +1,8 @@
 #import "Core/SGCore.h"
 #import "SGSingController.h"
 #import "SGSingAudio.h"
+#import "SGSingFormat.h"
 #import "SGStemWorker.h"
-#import "SGSingBackground.h"
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
@@ -38,18 +38,15 @@ static BOOL sg_configured;
 @property (nonatomic) BOOL waitingForCommand;
 @property (nonatomic) SGSingState state;
 @property (nonatomic) NSString *explanation;
-@property (nonatomic) NSString *model, *hashes;
-@property (nonatomic) BOOL usesCoreML;
-@property (nonatomic) uint32_t window;
+@property (nonatomic) NSString *model;
 @property (nonatomic) uint64_t generation;
 @property (nonatomic) float level, reduced;
-@property (nonatomic) BOOL wanted, active, interrupted, cooling;
+@property (nonatomic) BOOL wanted, interrupted, cooling;
 @property (nonatomic) NSTimer *timer;
-@property (nonatomic) CFTimeInterval lastClockPublication, lastBackgroundProgress;
+@property (nonatomic) CFTimeInterval lastClockPublication;
 - (void)workerStatus:(int32_t)status session:(SGSingSession *)session;
 - (void)reconcile;
 - (void)stop:(BOOL)discard unload:(BOOL)unload;
-- (void)requestBackground;
 @end
 static SGSingController *sg_controller;
 
@@ -95,37 +92,19 @@ static void workerStatus(void *context, int32_t status) {
     if (!(self = [super init])) return nil;
     _retired = [NSMutableSet set];
     _level = _reduced = SGSingMinimumVocalLevel;
-    _active = UIApplication.sharedApplication.applicationState != UIApplicationStateBackground;
     _state = SGSingIdle;
     NSBundle *bundle = [NSBundle bundleWithPath:[NSBundle.mainBundle pathForResource:@"Sing" ofType:@"bundle"]];
-    NSDictionary *manifest = [NSDictionary dictionaryWithContentsOfFile:[bundle pathForResource:@"Sing" ofType:@"plist"]];
-    NSString *architecture = manifest[@"Architecture"];
-    NSString *backend = manifest[@"Backend"];
-    _usesCoreML = [backend isEqualToString:@"CoreMLCPU"] || [backend isEqualToString:@"CoreMLAdaptive"];
-    _window = [manifest[@"WindowFrames"] unsignedIntValue];
-    _model = [bundle pathForResource:@"separator" ofType:_usesCoreML ? @"mlmodelc" : @"aimodelc"];
-    _hashes = [bundle pathForResource:@"hashes" ofType:@"json"];
-    char name[64];
-    NSString *device = SGStemArchitectureName(name, sizeof name) ? @(name) : nil;
-    SGLog(@"Sing: this iPhone's Core AI architecture is %@, the build's voice model is for %@",
-          device ?: @"unknown (below iOS 27)", manifest ? architecture : @"nothing (no Sing.bundle)");
+    _model = [bundle pathForResource:@"separator" ofType:@"mlmodelc"];
     // Each check says what it found, so the alert names the one thing missing. A release has no model:
     // it comes from SING_MODEL_BUNDLE at build time (harness/sing/README.md).
-    NSString *missing = !device ? @"Sing requires iOS 27."
-        : !manifest ? @"This build doesn't include Sing's voice model."
-        : !architecture.length || (backend && !_usesCoreML && ![backend isEqualToString:@"CoreAI"]) || !_model || !_hashes || _window != 88200
-            ? @"The voice model in this build is incomplete."
-        : !SGStemArchitectureMatches(architecture.UTF8String)
-            ? [NSString stringWithFormat:@"The voice model in this build is for %@, and this iPhone needs one for %@.", architecture, device]
-        : nil;
+    NSString *missing = !SGSingSupported() ? @"Sing requires iOS 27."
+        : !_model ? @"This build doesn't include Sing's voice model." : nil;
     if (missing) {
         _state = SGSingUnavailable;
         _explanation = missing;
     }
     SGAddPlayerStateObserver(self);
     NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
-    [nc addObserver:self selector:@selector(background:) name:UIApplicationDidEnterBackgroundNotification object:nil];
-    [nc addObserver:self selector:@selector(foreground:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [nc addObserver:self selector:@selector(memory:) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     [nc addObserver:self selector:@selector(thermal:) name:NSProcessInfoThermalStateDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(route:) name:AVAudioSessionRouteChangeNotification object:nil];
@@ -141,7 +120,6 @@ static void workerStatus(void *context, int32_t status) {
 }
 - (NSString *)restriction {
     if (_interrupted) return @"Sing will be ready when the audio interruption ends.";
-    if (!_active && !_usesCoreML && !SGSingBackgroundAllowed()) return SGSingBackgroundExplanation();
     if (NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious) return @"Let your iPhone cool down before using Sing again.";
     for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
         if ([port.portType isEqualToString:AVAudioSessionPortAirPlay]) return @"Sing is unavailable over AirPlay.";
@@ -202,14 +180,16 @@ static void workerStatus(void *context, int32_t status) {
     SGSingSession *session = [SGSingSession new];
     session.finished = YES;
     session.track = SGURIString(state.track.URI);
-    session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(state.track.URI), 0, 1, 0}, _window, _window * 3 / 4, _level);
+    session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(state.track.URI), 0, 1, 0},
+                                      SGSingWindowFrames, SGSingHopFrames, _level);
     if (!session.audio) { _blockedTrack = session.track; [self publish:SGSingFailed explanation:@"There is not enough memory to start Sing."]; return; }
     SGSingStreamSetModelReady(stream(session), false);
     _session = session;
     [self prepareNextTrack:state];
     session.finished = NO;
     void *context = (__bridge_retained void *)session;
-    session.worker = SGStemWorkerStart(context, _model.fileSystemRepresentation, _hashes.fileSystemRepresentation, _window * 3 / 4, readPCM, writePCM, workerStatus);
+    session.worker = SGStemWorkerStart(context, _model.fileSystemRepresentation, SGSingWindowFrames, SGSingHopFrames,
+                                       readPCM, writePCM, workerStatus);
     if (!session.worker) {
         CFRelease(context); session.finished = YES; _session = nil; _blockedTrack = session.track;
         [self publish:SGSingFailed explanation:@"The local voice model could not start."];
@@ -300,14 +280,6 @@ static void workerStatus(void *context, int32_t status) {
                 [self prepareNextTrack:state];
                 SGLog(@"Sing continuing a prepared repeat of the current track");
             }
-            CFTimeInterval now = CACurrentMediaTime();
-            if (!_usesCoreML && now - _lastBackgroundProgress >= 1) {
-                _lastBackgroundProgress = now;
-                double remaining = fmax(0, state.duration - SGSingSourcePosition(state));
-                uint64_t completed = SGSingStreamProcessed(stream(session));
-                uint64_t remainingFrames = isfinite(remaining) && remaining < (double)(INT64_MAX / 44100) ? (uint64_t)(remaining * 44100) : 0;
-                SGSingBackgroundProgress(_generation, completed, remainingFrames ? completed + remainingFrames : 0);
-            }
             SGSingAudioSetLatency(session.audio, (AVAudioSession.sharedInstance.outputLatency + SGPlayerAudioLatency()) * SGPlayerSpeed());
             if (CACurrentMediaTime() - _lastClockPublication >= 0.25) {
                 _lastClockPublication = CACurrentMediaTime();
@@ -345,7 +317,6 @@ static void workerStatus(void *context, int32_t status) {
     if (!_session && _wanted && !_waitingForCommand && !_blockedTrack) [self start];
     if (!_session && !_waitingForCommand && !_retired.count &&
         (!_wanted || _blockedTrack || [self restriction])) { [_timer invalidate]; _timer = nil; }
-    if (!_session && !_retired.count && (!_wanted || _blockedTrack || _interrupted || _cooling)) SGSingBackgroundEnd();
 }
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     if (_blockedTrack && ![_blockedTrack isEqualToString:SGURIString(state.track.URI)]) _blockedTrack = nil;
@@ -363,36 +334,6 @@ static void workerStatus(void *context, int32_t status) {
         }
     }
     [self prepareNextTrack:state];
-    [self reconcile];
-}
-- (void)background:(NSNotification *)note {
-    SGLog(@"Sing lifecycle inactive: %@, app state %ld", note.name, (long)UIApplication.sharedApplication.applicationState);
-    _active = NO;
-    // Core ML uses its warm CPU model while inactive, under Spotify's audio background
-    // mode. Optional GPU acceleration is limited to foreground predictions.
-    if (!_usesCoreML && !SGSingBackgroundAllowed()) {
-        [self stop:NO unload:YES];
-        if (_state != SGSingUnavailable) [self publish:_session ? SGSingDraining : SGSingIdle explanation:nil];
-    }
-}
-- (void)requestBackground {
-    if (_usesCoreML) return;
-    __weak typeof(self) weak = self;
-    SGSingBackgroundStart(^(BOOL expired) {
-        typeof(self) self = weak;
-        if (!self || !self.wanted) return;
-        if (expired || (!SGSingBackgroundAllowed() && !self.active)) {
-            self.blockedTrack = SGURIString(SGPlayerState().track.URI);
-            [self stop:NO unload:YES];
-            [self publish:SGSingFailed explanation:SGSingBackgroundExplanation()];
-        }
-        [self reconcile];
-    });
-}
-- (void)foreground:(NSNotification *)note {
-    SGLog(@"Sing lifecycle active, interrupted %d", _interrupted);
-    _active = YES;
-    if (_wanted) [self requestBackground];
     [self reconcile];
 }
 - (void)memory:(NSNotification *)note {
@@ -431,14 +372,18 @@ static void workerStatus(void *context, int32_t status) {
         SGLog(@"Sing interruption: type %@, reason %@, options %@", note.userInfo[AVAudioSessionInterruptionTypeKey],
               note.userInfo[AVAudioSessionInterruptionReasonKey], note.userInfo[AVAudioSessionInterruptionOptionKey]);
         self.interrupted = [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan;
-        // Spotify owns whether playback resumes. Retain the model, queued audio and GPU
-        // grant across a temporary interruption; reconcile pauses the worker's source input.
+        // Spotify owns whether playback resumes. Retain the model and queued audio across a
+        // temporary interruption; reconcile pauses the worker's source input.
         // If Spotify replaces its audio graph, reattach a fresh generation after the interruption.
         [self reconcile];
     });
 }
 @end
 
+BOOL SGSingSupported(void) {
+    if (@available(iOS 27.0, *)) return YES;
+    return NO;
+}
 void SGSingConfigure(BOOL enabled) {
     sg_configured = enabled && !SGFlag(SGKeySingKillSwitch, NO);
     if (sg_configured && !sg_controller) sg_controller = [SGSingController new];
@@ -473,7 +418,6 @@ void SGSingSetEnabled(BOOL enabled) {
         [sg_controller stop:NO unload:NO];
         [sg_controller publish:sg_controller.session ? SGSingDraining : SGSingIdle explanation:nil];
     } else {
-        if (sg_controller.active) [sg_controller requestBackground];
         [sg_controller publish:SGSingPreparing explanation:nil];
     }
     [sg_controller reconcile];

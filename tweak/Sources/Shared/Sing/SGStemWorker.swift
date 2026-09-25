@@ -1,12 +1,18 @@
+// Sing's worker (SGStemWorker.h): a task per playback generation that reads source packets from the C
+// stream, runs whole windows through the separator, and hands each finished hop of vocals back. The loaded
+// model outlives the task that loaded it by a minute, so a seek or the next song does not load it again.
 import Foundation
 
 public typealias StemRead = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<UInt64>?) -> Int32
 public typealias StemWrite = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<Float>?, UInt32, UInt64, UInt64, UInt64, UInt32) -> Int32
 public typealias StemStatus = @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
 
-#if canImport(CoreAI)
-import CoreAI
-#endif
+// SGStemWorker.h's SGStemLoading...SGStemFailed, and the stream's packet size (SGSingStreamPacketFrames).
+private enum StemState: Int32 { case loading = 1, ready, finished, failed }
+private let packetFrames = 1024
+
+// One warm model, shared by the workers that follow each other and kept for a while after the last
+// one ends. A load in flight is shared too, and one made stale by a purge never becomes the warm model.
 @available(iOS 27.0, macOS 27.0, *)
 private actor SGStemModels {
     static let shared = SGStemModels()
@@ -17,7 +23,7 @@ private actor SGStemModels {
     private var loadEpoch: UInt64 = 0
     private var users = 0
 
-    func acquire(path: String, hashesPath: String) async throws -> SGStemSeparator {
+    func acquire(path: String) async throws -> SGStemSeparator {
         epoch &+= 1
         users += 1
         if self.path == path, let model { return model }
@@ -26,14 +32,10 @@ private actor SGStemModels {
         if loading == nil {
             loadEpoch &+= 1
             loading = Task {
-                let hashes = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: hashesPath)))
-                let modelURL = URL(fileURLWithPath: path)
-                let settingsURL = modelURL.deletingLastPathComponent().appendingPathComponent("Sing.plist")
-                let settings = (try? Data(contentsOf: settingsURL)).flatMap {
-                    try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any]
-                }
-                return try await SGStemSeparator(modelURL: modelURL, payloadHashes: hashes,
-                    preferForegroundGPU: settings?["Backend"] as? String == "CoreMLAdaptive")
+                let separator = try await SGStemSeparator(modelURL: URL(fileURLWithPath: path))
+                try await separator.warmUp()
+                try Task.checkCancellation()
+                return separator
             }
         }
         let task = loading!
@@ -86,19 +88,21 @@ private final class SGStemJob: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return unload ? 0 : 60
     }
-    func run(path: String, hashesPath: String, hop: Int) async {
-        status(context, 1)
+    private func report(_ value: StemState) { status(context, value.rawValue) }
+
+    func run(path: String, window size: Int, hop: Int) async {
+        report(.loading)
         do {
-            let separator = try await SGStemModels.shared.acquire(path: path, hashesPath: hashesPath)
+            let separator = try await SGStemModels.shared.acquire(path: path)
             try Task.checkCancellation()
-            guard separator.chunkSamples == 88200 else { throw SGStemError.invalidModel }
-            let worker = try SGStemWindowProcessor(chunkSamples: separator.chunkSamples, hopSamples: hop) { pcm in
+            guard separator.windowFrames == size else { throw SGStemError.invalidModel }
+            let worker = try SGStemWindowProcessor(chunkSamples: size, hopSamples: hop) { pcm in
                 try await separator.vocals(for: pcm)
             }
-            status(context, 2)
-            let size = separator.chunkSamples, overlap = size - hop
+            report(.ready)
+            let overlap = size - hop
             var window = [Float](repeating: 0, count: size * 2), filled = 0
-            var packet = [Float](repeating: 0, count: 2048), packetCount = 0, packetOffset = 0
+            var packet = [Float](repeating: 0, count: packetFrames * 2), packetCount = 0, packetOffset = 0
             var metadata = [UInt64](repeating: 0, count: 4), origin: [UInt64]?
             var received: UInt64 = 0, nextWindow: UInt64 = 0
             let clock = ContinuousClock()
@@ -108,7 +112,7 @@ private final class SGStemJob: @unchecked Sendable {
                     let count = read(context, &packet, &metadata)
                     if count < 0 { break }
                     if count == 0 { try await Task.sleep(for: .milliseconds(25)); continue }
-                    guard count <= 1024 else { throw SGStemError.invalidInput }
+                    guard count <= packetFrames else { throw SGStemError.invalidInput }
                     if origin == nil {
                         origin = metadata; received = metadata[2]; nextWindow = received
                         await worker.reset(generation: metadata[0], track: metadata[1], format: UInt32(metadata[3]))
@@ -147,22 +151,25 @@ private final class SGStemJob: @unchecked Sendable {
                 let failure = error as NSError
                 NSLog("[spotifyglass] Sing worker failed: %@ (%ld), %@", failure.domain, failure.code,
                       String(describing: error))
-                status(context, 4)
+                report(.failed)
             }
         }
         let seconds = retention()
         // Schedule retention independently: this task must release the stream/context now.
         Task { await SGStemModels.shared.release(after: seconds) }
-        status(context, 3)
+        report(.finished)
     }
 }
+
 @_cdecl("SGStemWorkerStart")
-public func sgStemWorkerStart(_ context: UnsafeMutableRawPointer?, _ path: UnsafePointer<CChar>?, _ hashes: UnsafePointer<CChar>?, _ hopFrames: UInt32,
-                       _ read: StemRead?, _ write: StemWrite?, _ status: StemStatus?) -> UnsafeMutableRawPointer? {
-    if #available(iOS 27.0, macOS 27.0, *), let path, let hashes, let read, let write, let status {
+public func sgStemWorkerStart(_ context: UnsafeMutableRawPointer?, _ path: UnsafePointer<CChar>?, _ windowFrames: UInt32,
+                              _ hopFrames: UInt32, _ read: StemRead?, _ write: StemWrite?, _ status: StemStatus?) -> UnsafeMutableRawPointer? {
+    if #available(iOS 27.0, macOS 27.0, *), let path, let read, let write, let status {
         let job = SGStemJob(context: context, read: read, write: write, status: status)
-        let modelPath = String(cString: path), hashesPath = String(cString: hashes)
-        job.task = Task.detached(priority: .userInitiated) { await job.run(path: modelPath, hashesPath: hashesPath, hop: Int(hopFrames)) }
+        let modelPath = String(cString: path)
+        job.task = Task.detached(priority: .userInitiated) {
+            await job.run(path: modelPath, window: Int(windowFrames), hop: Int(hopFrames))
+        }
         return Unmanaged.passRetained(job).toOpaque()
     }
     return nil
@@ -173,29 +180,6 @@ public func sgStemWorkerCancel(_ handle: UnsafeMutableRawPointer?, _ unload: Int
     if #available(iOS 27.0, macOS 27.0, *), let handle {
         Unmanaged<SGStemJob>.fromOpaque(handle).takeRetainedValue().cancel(unload: unload != 0)
     }
-}
-
-@_cdecl("SGStemArchitectureMatches")
-public func sgStemArchitectureMatches(_ architecture: UnsafePointer<CChar>?) -> Int32 {
-    #if canImport(CoreAI)
-    if #available(iOS 27.0, macOS 27.0, *), let architecture {
-        return AIModel.deviceArchitectureName == String(cString: architecture) ? 1 : 0
-    }
-    #endif
-    return 0
-}
-
-@_cdecl("SGStemArchitectureName")
-public func sgStemArchitectureName(_ name: UnsafeMutablePointer<CChar>?, _ size: Int32) -> Int32 {
-    #if canImport(CoreAI)
-    if #available(iOS 27.0, macOS 27.0, *), let name {
-        let utf8 = Array(AIModel.deviceArchitectureName.utf8CString)
-        guard utf8.count <= Int(size) else { return 0 }
-        utf8.withUnsafeBufferPointer { name.update(from: $0.baseAddress!, count: utf8.count) }
-        return 1
-    }
-    #endif
-    return 0
 }
 
 @_cdecl("SGStemWorkerPurge")

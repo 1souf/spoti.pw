@@ -2,20 +2,19 @@
 """Build a signed, local iPhone model benchmark using Xcode's configured development account."""
 import argparse
 import hashlib
-import json
 from pathlib import Path
 import shutil
 import subprocess
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--model", type=Path, required=True, help="compiled .aimodelc or .mlmodelc directory")
-parser.add_argument("--goldens", type=Path, required=True, help="export_model.py output with golden_raw/vocals.f32")
+parser.add_argument("--model", type=Path, required=True, help="the compiled separator.mlmodelc")
+parser.add_argument("--goldens", type=Path, required=True, help="export_coreml.py output with golden_raw/vocals.f32")
 parser.add_argument("--team", required=True, help="development team configured in Xcode")
 parser.add_argument("--build-dir", type=Path, help="generated project and app output; use a local cache outside cloud-synced folders")
 args = parser.parse_args()
 model = args.model.resolve()
-if model.suffix not in (".aimodelc", ".mlmodelc") or not model.is_dir():
-    parser.error("--model must be a compiled .aimodelc or .mlmodelc directory")
+if model.suffix != ".mlmodelc" or not model.is_dir():
+    parser.error("--model must be a compiled .mlmodelc directory")
 for name in ("golden_raw.f32", "golden_vocals.f32"):
     if not (args.goldens / name).is_file():
         parser.error("missing " + name)
@@ -30,17 +29,14 @@ project.mkdir(parents=True)
 assets = out / "Assets"
 assets.mkdir()
 shutil.copyfile(here / "device.swift", out / "Main.swift")
-for name in ("SGStemSeparator.swift", "SGStemCoreMLSeparator.swift"):
+for name in ("SGStemSeparator.swift", "SGStemSpectralDSP.swift"):
     shutil.copyfile(here.parent.parent / "tweak/Sources/Shared/Sing" / name, out / name)
-subprocess.run(["cp", "-cR", str(model), str(assets / ("separator" + model.suffix))], check=True)
+subprocess.run(["cp", "-cR", str(model), str(assets / "separator.mlmodelc")], check=True)
 for name in ("golden_raw.f32", "golden_vocals.f32"):
     shutil.copyfile(args.goldens / name, assets / name)
-hashes = {}
-for path in model.rglob("*"):
-    if path.is_file():
-        with path.open("rb") as stream:
-            hashes[str(path.relative_to(model))] = hashlib.file_digest(stream, "sha256").hexdigest()
-(assets / "hashes.json").write_text(json.dumps(hashes, indent=2) + "\n")
+# The report names the export it measured by its graph's hash.
+with (model / "model.mil").open("rb") as stream:
+    (assets / "model-source.txt").write_text(hashlib.file_digest(stream, "sha256").hexdigest())
 (project / "project.pbxproj").write_text("""// !$*UTF8*$!
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
  A00000000000000000000001 = {isa = PBXProject; buildConfigurationList = A00000000000000000000002; compatibilityVersion = "Xcode 14.0"; mainGroup = A00000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000004,); attributes = {LastUpgradeCheck = 2700;};};
@@ -59,7 +55,7 @@ for path in model.rglob("*"):
  A0000000000000000000000E = {isa = PBXBuildFile; fileRef = A00000000000000000000007;};
  A0000000000000000000000F = {isa = PBXBuildFile; fileRef = A00000000000000000000008;};
  A00000000000000000000010 = {isa = PBXBuildFile; fileRef = A00000000000000000000009;};
- A00000000000000000000011 = {isa = PBXFileReference; path = SGStemCoreMLSeparator.swift; lastKnownFileType = sourcecode.swift; sourceTree = "<group>";};
+ A00000000000000000000011 = {isa = PBXFileReference; path = SGStemSpectralDSP.swift; lastKnownFileType = sourcecode.swift; sourceTree = "<group>";};
  A00000000000000000000012 = {isa = PBXBuildFile; fileRef = A00000000000000000000011;};
  }; rootObject = A00000000000000000000001; }
 """)

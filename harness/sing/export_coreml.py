@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the pinned two-second spectral separator for CPU-only Core ML; no downloads."""
+"""Export the pinned two-second spectral separator for Core ML; no downloads."""
 import argparse
 import hashlib
 from importlib.metadata import version
@@ -15,13 +15,13 @@ parser.add_argument("checkpoint", type=Path)
 parser.add_argument("golden_raw", type=Path, help="original eight-second planar golden input")
 parser.add_argument("output", type=Path, help="new local export directory")
 parser.add_argument("--precision", choices=("mixed", "float32"), default="mixed",
-                    help="mixed CPU profile, or the full-precision comparison model")
+                    help="the mixed-precision model Sing uses, or the full-precision comparison model")
 parser.add_argument("--unpinned-tools", action="store_true",
                     help="export with the installed torch/coremltools; the result will not match the pinned "
                          "payload hashes, so package it with package_model.py --unpinned")
 args = parser.parse_args()
 manifest = json.loads((Path(__file__).parent / "model.json").read_text())
-profile = manifest["cpuProfile"]
+profile = manifest["export"]
 for package, key in [("coremltools", "coremltoolsVersion"), ("torch", "torchVersion")]:
     if version(package) != profile[key]:
         if not args.unpinned_tools:
@@ -34,7 +34,7 @@ def digest(path):
 
 if digest(args.checkpoint) != manifest["checkpointSHA256"]:
     raise ValueError("checkpoint hash mismatch")
-expected_raw = next(f["lfs"]["sha256"] for f in manifest["files"] if f["rfilename"] == "golden_raw.f32")
+expected_raw = next(f["sha256"] for f in manifest["goldens"] if f["rfilename"] == "golden_raw.f32")
 if digest(args.golden_raw) != expected_raw:
     raise ValueError("golden input hash mismatch")
 for checkout, revision, paths in [
@@ -92,6 +92,6 @@ with torch.inference_mode():
 subprocess.run(["xcrun", "coremlcompiler", "compile", str(package), str(args.output),
                 "--platform", "ios", "--deployment-target", "18.0"], check=True)
 compiled = args.output / "separator.mlmodelc"
-hashes = {p.relative_to(compiled).as_posix(): digest(p) for p in compiled.rglob("*") if p.is_file()}
-(args.output / "hashes.json").write_text(json.dumps(hashes, indent=2) + "\n")
-print(f"Exported {args.precision} CPU candidate; run native parity, worker, and physical-device checks before use.")
+for name in profile["payloadHashes"]:
+    print(f"{name}: {digest(compiled / name)}")
+print(f"Exported the {args.precision} model; run native parity, worker, and physical-device checks before use.")

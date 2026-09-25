@@ -19,7 +19,7 @@ import Foundation
         }
         // Reusing the Core ML input and inverse scratch must not leave samples from a
         // prior window, including a transition from music to exact silence.
-        var reused = [Float](repeating: .nan, count: 824100)
+        var reused = [Float](repeating: .nan, count: SGStemShape.spectrumCount)
         for input in [pcm, [Float](repeating: 0, count: pcm.count), pcm] {
             try reused.withUnsafeMutableBufferPointer { try dsp.encode(input, into: $0) }
             let decoded = try reused.withUnsafeBufferPointer { try dsp.decode($0) }
@@ -35,7 +35,7 @@ import Foundation
         catch SGStemError.invalidInput { }
         do { _ = try dsp.encode([]); preconditionFailure("short input accepted") }
         catch SGStemError.invalidInput { }
-        let invalidSpectrum = [Float](repeating: .infinity, count: 824100)
+        let invalidSpectrum = [Float](repeating: .infinity, count: SGStemShape.spectrumCount)
         do { _ = try invalidSpectrum.withUnsafeBufferPointer { try dsp.decode($0) }; preconditionFailure("invalid spectrum accepted") }
         catch SGStemError.invalidOutput { }
         print("spectral DSP: repeated stereo round trips, boundary impulses, DC/Nyquist and invalid input passed")

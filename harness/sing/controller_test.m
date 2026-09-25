@@ -10,8 +10,6 @@ static BOOL paused, loading, repeatTrack, outputAvailable = YES;
 static NSString *trackURI = @"spotify:track:fixture";
 static NSString *nextURI;
 static uint64_t sourceFrames, naturalBoundary = UINT64_MAX;
-static BOOL backgroundAllowed = YES;
-static void (^backgroundChanged)(BOOL);
 static void *attached;
 static SGAudioSourceProcessor render;
 static struct { void *context; SGStemStatus status; BOOL cancelled; } jobs[24];
@@ -35,11 +33,6 @@ static struct { void *context; SGStemStatus status; BOOL cancelled; } jobs[24];
 - (NSArray *)future { return nextURI ? @[[SGNextTrack new]] : @[]; }
 - (SPTPlayerOptions *)options { static SPTPlayerOptions *options; if (!options) options = [SPTPlayerOptions new]; return options; }
 @end
-void SGSingBackgroundStart(void (^changed)(BOOL)) { backgroundChanged = [changed copy]; }
-void SGSingBackgroundEnd(void) { backgroundChanged = nil; }
-BOOL SGSingBackgroundAllowed(void) { return backgroundAllowed; }
-NSString *SGSingBackgroundExplanation(void) { return @"Background permission ended"; }
-void SGSingBackgroundProgress(uint64_t generation, uint64_t completed, uint64_t total) {}
 NSString *SGURIString(id uri) { return uri; }
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) { (void)observer; }
 SPTPlayerState *SGPlayerState(void) { return player; }
@@ -47,10 +40,8 @@ double SGSingSourcePosition(SPTPlayerState *state) { return 10; }
 double SGPlayerAudioLatency(void) { return 0; }
 double SGPlayerSpeed(void) { return 1; }
 BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
-int32_t SGStemArchitectureMatches(const char *name) { return 1; }
-int32_t SGStemArchitectureName(char *name, int32_t size) { return snprintf(name, (size_t)size, "test") < size; }
 void SGStemWorkerPurge(void) { purges++; }
-void *SGStemWorkerStart(void *context, const char *path, const char *hashes, uint32_t hopFrames, SGStemRead read, SGStemWrite write, SGStemStatus status) {
+void *SGStemWorkerStart(void *context, const char *path, uint32_t windowFrames, uint32_t hopFrames, SGStemRead read, SGStemWrite write, SGStemStatus status) {
     assert(starts < 24); unsigned n = starts++;
     jobs[n].context = context; jobs[n].status = status;
     return &jobs[n];
@@ -91,8 +82,7 @@ int main(void) { @autoreleasepool {
     class_replaceMethod(infoClass, @selector(thermalState), (IMP)thermal, method_getTypeEncoding(getter));
     player = [SPTPlayerState new];
     sg_configured = YES; sg_controller = [SGSingController new];
-    sg_controller.state = SGSingIdle; sg_controller.active = YES;
-    sg_controller.window = 88200; sg_controller.model = @"fixture"; sg_controller.hashes = @"fixture";
+    sg_controller.state = SGSingIdle; sg_controller.model = @"fixture";
     assert(SGSingVocalLevel() == .2f && SGSingReducedLevel() == .2f);
     SGSingSetVocalLevel(-1); assert(SGSingVocalLevel() == .2f);
     SGSingSetVocalLevel(0); assert(SGSingVocalLevel() == .2f);
@@ -162,14 +152,6 @@ int main(void) { @autoreleasepool {
     for (unsigned n = 0; n < 4; n++) assert(!SGSingStreamRender(s, 441, pcm, source, NULL, 44100));
     free(vocals);
     [sg_controller reconcile]; assert(SGSingCurrentState() == SGSingActive);
-    // App switching/locking retains the running worker and mix when the system grants GPU
-    // background access. It must not drain, unload, or replace a playback generation.
-    unsigned beforeBackground = cancels, beforePurges = purges;
-    [sg_controller background:nil];
-    assert(SGSingEnabled() && SGSingCurrentState() == SGSingActive && sg_controller.session.attached);
-    assert(cancels == beforeBackground && purges == beforePurges && ![sg_controller restriction]);
-    [sg_controller foreground:nil];
-    assert(cancels == beforeBackground && SGSingCurrentState() == SGSingActive);
     SGSingSetEnabled(NO); assert(SGSingCurrentState() == SGSingDraining);
     SGSingSetEnabled(YES); assert(SGSingCurrentState() == SGSingPreparing && starts == 5);
     report(4, SGStemFinished);
@@ -269,87 +251,52 @@ int main(void) { @autoreleasepool {
     assert(SGSingCurrentState() == SGSingFailed && [SGSingExplanation() containsString:@"44.1"]);
     assert(!sg_controller.session && starts == cancels);
     SGSingSetEnabled(NO);
-    // Expiration is different from a lifecycle event: preserve intent, stop the worker,
-    // and don't retry a revoked grant in the background.
-    outputAvailable = YES; paused = YES;
-    SGSingSetEnabled(YES); report(13, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady);
-    beforeBackground = cancels;
-    [sg_controller background:nil];
-    assert(cancels == beforeBackground && SGSingCurrentState() == SGSingReady);
-    backgroundAllowed = NO; assert(backgroundChanged); backgroundChanged(YES); report(13, SGStemFinished);
-    assert(SGSingCurrentState() == SGSingFailed && SGSingEnabled() && !sg_controller.session);
-    assert(cancels == beforeBackground + 1 && [SGSingExplanation() containsString:@"Background"]);
-    for (int n = 0; n < 10; n++) [sg_controller reconcile];
-    assert(starts == 14);
-    SGSingSetEnabled(NO); backgroundAllowed = YES; [sg_controller foreground:nil];
-    // Cancelling iOS's task UI must also stop work while Spotify is in the foreground.
-    SGSingSetEnabled(YES); report(14, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && sg_controller.active);
-    backgroundAllowed = NO; assert(backgroundChanged); backgroundChanged(YES); report(14, SGStemFinished);
-    assert(SGSingCurrentState() == SGSingFailed && !sg_controller.session && starts == cancels);
-    SGSingSetEnabled(NO);
     // A temporary audio interruption is not a cancellation, even if the model finishes loading
-    // during it. Preserve the worker/grant and let Spotify's play state decide whether to resume.
-    backgroundAllowed = YES; paused = NO;
+    // during it. Preserve the worker and let Spotify's play state decide whether to resume.
+    outputAvailable = YES; paused = NO;
     SGSingSetEnabled(YES);
     SGSingSession *interruptedSession = sg_controller.session;
     NSNotification *began = [NSNotification notificationWithName:AVAudioSessionInterruptionNotification object:nil
         userInfo:@{AVAudioSessionInterruptionTypeKey: @(AVAudioSessionInterruptionTypeBegan)}];
     NSNotification *ended = [NSNotification notificationWithName:AVAudioSessionInterruptionNotification object:nil
         userInfo:@{AVAudioSessionInterruptionTypeKey: @(AVAudioSessionInterruptionTypeEnded)}];
-    [sg_controller interruption:began]; flush(); report(15, SGStemReady);
+    [sg_controller interruption:began]; flush(); report(13, SGStemReady);
     assert(sg_controller.session == interruptedSession && interruptedSession.ready && !attached);
-    assert(SGSingStreamWorkerState(stream(interruptedSession)) == 0 && starts == 16 && cancels == 15);
-    [sg_controller background:nil]; assert(backgroundChanged);
+    assert(SGSingStreamWorkerState(stream(interruptedSession)) == 0 && starts == 14 && cancels == 13);
     [sg_controller interruption:ended]; flush();
     assert(sg_controller.session == interruptedSession && attached && SGSingStreamWorkerState(stream(interruptedSession)) == 1);
     [sg_controller interruption:began]; flush();
     attached = NULL; [sg_controller reconcile];
-    assert(sg_controller.session == interruptedSession && starts == 16 && cancels == 15);
+    assert(sg_controller.session == interruptedSession && starts == 14 && cancels == 13);
     attached = interruptedSession.audio;
     [sg_controller interruption:ended]; flush();
     assert(sg_controller.session == interruptedSession && SGSingVocalLevel() == .7f);
-    paused = YES; [sg_controller reconcile]; SGSingSetEnabled(NO); report(15, SGStemFinished);
+    paused = YES; [sg_controller reconcile]; SGSingSetEnabled(NO); report(13, SGStemFinished);
     assert(!attached && !sg_controller.session && starts == cancels);
-    // A valid signing entitlement does not guarantee device GPU support. If no grant was
-    // available from the outset, backgrounding must stop work without losing the user's
-    // level/intent or repeatedly loading a model which cannot run there.
-    [sg_controller foreground:nil]; backgroundAllowed = NO;
-    SGSingSetEnabled(YES); report(16, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && SGSingVocalLevel() == .7f);
-    [sg_controller background:nil]; report(16, SGStemFinished);
-    assert(!attached && !sg_controller.session && SGSingEnabled());
-    assert(SGSingCurrentState() == SGSingFailed && [SGSingExplanation() containsString:@"Background"]);
-    for (int n = 0; n < 10; n++) [sg_controller reconcile];
-    assert(starts == 17 && starts == cancels);
-    [sg_controller foreground:nil]; report(17, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && SGSingVocalLevel() == .7f);
-    SGSingSetEnabled(NO); report(17, SGStemFinished);
-    assert(!attached && !sg_controller.session && starts == cancels);
-    // The CPU backend must not request a GPU task or stop when the app backgrounds without
-    // GPU permission. Model loading, paused preparation and interruption retain their session.
-    sg_controller.usesCoreML = YES;
+    // Spotify going to the background changes nothing: the worker runs on the CPU there, under
+    // Spotify's own audio background mode. Model loading, paused preparation and interruption
+    // retain their session.
     unsigned cpuPurges = purges;
     SGSingSetEnabled(YES);
-    assert(!backgroundChanged && starts == 19);
+    assert(starts == 15);
     SGSingSession *cpuSession = sg_controller.session;
-    [sg_controller background:nil]; report(18, SGStemReady);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    report(14, SGStemReady);
     assert(sg_controller.session == cpuSession && SGSingCurrentState() == SGSingReady);
-    assert(![sg_controller restriction] && purges == cpuPurges && !backgroundChanged);
+    assert(![sg_controller restriction] && purges == cpuPurges);
     paused = NO; [sg_controller reconcile];
     assert(attached && SGSingStreamWorkerState(stream(cpuSession)) == 1);
     [sg_controller interruption:began]; flush();
     assert(sg_controller.session == cpuSession && SGSingStreamWorkerState(stream(cpuSession)) == 0);
     [sg_controller interruption:ended]; flush();
     assert(sg_controller.session == cpuSession && SGSingStreamWorkerState(stream(cpuSession)) == 1);
-    [sg_controller foreground:nil];
-    assert(!backgroundChanged && sg_controller.session == cpuSession && SGSingVocalLevel() == .7f);
-    paused = YES; [sg_controller reconcile]; SGSingSetEnabled(NO); report(18, SGStemFinished);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    assert(sg_controller.session == cpuSession && SGSingVocalLevel() == .7f);
+    paused = YES; [sg_controller reconcile]; SGSingSetEnabled(NO); report(14, SGStemFinished);
     assert(!attached && !sg_controller.session && starts == cancels && purges == cpuPurges);
     // A cold model must collect PCM without stopping playback. Ready is deliberately delayed
     // here: original samples still reach the output and are retained for the eventual worker.
-    paused = NO; SGSingSetEnabled(YES); report(19, SGStemLoading);
+    paused = NO; SGSingSetEnabled(YES); report(15, SGStemLoading);
     SGSingSession *loadingSession = sg_controller.session;
     assert(attached && !loadingSession.ready && SGSingCurrentState() == SGSingPreparing);
     for (unsigned tick = 0; tick < 300; tick++) {
@@ -358,9 +305,9 @@ int main(void) { @autoreleasepool {
     }
     assert(SGSingStreamPresented(stream(loadingSession)) == 9600);
     assert(SGSingStreamQueued(stream(loadingSession)) == 9600);
-    report(19, SGStemReady);
-    assert(sg_controller.session == loadingSession && loadingSession.ready && starts == 20);
-    SGSingSetEnabled(NO); report(19, SGStemFinished);
+    report(15, SGStemReady);
+    assert(sg_controller.session == loadingSession && loadingSession.ready && starts == 16);
+    SGSingSetEnabled(NO); report(15, SGStemFinished);
     s = stream(loadingSession);
     while (SGSingStreamState(s) != SGSingTimelineIdle) assert(!SGSingStreamRender(s, 441, pcm, source, NULL, 44100));
     [sg_controller reconcile];
