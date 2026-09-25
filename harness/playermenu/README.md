@@ -8,7 +8,7 @@ dismisses the sheet. Speed and pitch are stubs that log.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/PlayerMenuHarness.app
-    xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [hold|more|speed|tile|share|lyrics|outside|pending] [loading|stuck] [dump]
+    xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [hold|more|speed|follow|tile|share|lyrics|outside|pending] [loading|stuck] [dump]
 
 Every run taps the ⋯ at 1 s and reports the card, its rows top to bottom and whether Spotify's sheet is out
 of sight at 2.2 s; the scenario then taps something on the card at 3 s and reports again. `loading` hands

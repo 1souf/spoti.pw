@@ -6,7 +6,7 @@
 //     SpeedPitch.x       speed and pitch done to Spotify's audio, between its mixer and its speaker unit
 //     SGTimePitch.m      Apple's time and pitch unit, pulling the mixer or working in place
 //
-// Speed and pitch last until Spotify quits; neither is stored.
+// Speed and pitch last until Spotify quits; neither is stored. Whether pitch follows speed is.
 // Threading: main thread only, except what SGTimePitch.h says runs on the render thread.
 #import <UIKit/UIKit.h>
 
@@ -31,11 +31,18 @@ double SGPlayerSpeed(void);
 // Whether speed can apply: Spotify's output was taken over when it wired it.
 BOOL SGPlayerSpeedAllowed(void);
 void SGSetPlayerSpeed(double speed);
-// Semitones Spotify's output is moved by, 0 when it is not.
+// Semitones the Pitch slider moves Spotify's output by, 0 when it does not (always while pitch follows speed).
 float SGPlayerPitch(void);
 void SGSetPlayerPitch(float semitones);
 // Whether the output could be reached to change its pitch.
 BOOL SGPlayerPitchAvailable(void);
+// Pitch follows speed, as a record played faster: the pitch slider goes and speed is played by resampling
+// (SpeedPitch.x). The switch is stored, but it only applies where speed does, so this is NO while
+// SGPlayerSpeedAllowed() is NO. Turning it on puts the pitch back to normal; while it is on, SGSetPlayerPitch
+// does nothing.
+#define SGKeyPitchFollowsSpeed @"spotifyglass.speedPitch.follows"
+BOOL SGPlayerPitchFollowsSpeed(void);
+void SGSetPlayerPitchFollowsSpeed(BOOL follows);
 
 // Current downstream processing delay, in seconds. Atomic unit ownership; safe off-render.
 double SGPlayerAudioLatency(void);

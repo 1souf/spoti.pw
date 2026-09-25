@@ -16,6 +16,12 @@
 // Switching the unit in or out skips or repeats its 93 ms, so it stays in for a moment after both return
 // to normal, and a finger dragging across normal does not switch it back and forth.
 //
+// While pitch follows speed (the switch between the sliders), the chain's unit is a varispeed instead
+// (SGTimePitchCreateVarispeed): the song resampled, as a record played faster, its pitch going with the
+// speed exactly. The time and pitch unit could only get near that, a whole semitone at a time, and even
+// exact it smears every attack, keeping about a quarter of a click's energy sharp at 1.25x where the
+// varispeed keeps all of it (harness/pitch). The varispeed is 1 ms late rather than 93.
+//
 // Spotify's clock keeps running at its own speed between the player's reports: -[SPTPlayerState position]
 // is positionAsOfTimestamp minus timeIntervalSinceNow times [self playbackSpeed] (disassembly,
 // 0x1057735ec), so playbackSpeed is hooked to include this speed, and the scrubber, the lyrics and the lock
@@ -28,7 +34,7 @@
 // the hardware's, not the one Spotify hands the unit (harness/audio-effects/sim), so the fallback's unit is made
 // for that one.
 //
-// Speed and pitch last until Spotify quits.
+// Speed and pitch last until Spotify quits; whether pitch follows speed is stored.
 //
 // Threading: the render callback and the notify run on the render thread and touch only atomics and the
 // units; Spotify sets its properties and starts its unit on its audio thread; everything else is main
@@ -48,10 +54,13 @@ static const double kOffAfter = 1.5;
 #pragma mark - shared between the threads
 
 static float sg_speed = 1, sg_semitones;     // main thread
+static BOOL sg_follows;                      // main thread, pitch follows speed as stored
 static atomic_uint sg_speedBits;             // sg_speed for SPTPlayerState, read on any thread
 
-// The unit in use and whether the render thread runs it: in the chain (pull), else in place (pitch only).
-static _Atomic(SGTimePitch *) sg_pull, sg_inPlace;
+// The units, each made for the output's format when first needed: the time and pitch unit in the chain
+// (pull), the varispeed in the chain while pitch follows speed, and the one in place (pitch only). The
+// render thread pulls sg_chain, one of the chain's two, and runs either only while engaged.
+static _Atomic(SGTimePitch *) sg_pull, sg_varispeed, sg_inPlace, sg_chain;
 static atomic_bool sg_engaged, sg_busy;
 static pthread_mutex_t sg_buildLock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -97,7 +106,7 @@ static BOOL fitsUnit(const AudioBufferList *data, UInt32 frames, SGTimePitch *un
 // Called only by the central pipeline, before the output-domain processors.
 static bool processPull(UInt32 frames, AudioBufferList *data, OSStatus *status) {
     atomic_store(&sg_busy, true);
-    SGTimePitch *unit = atomic_load(&sg_pull);
+    SGTimePitch *unit = atomic_load(&sg_chain);
     bool handles = data && atomic_load(&sg_engaged) && unit && fitsUnit(data, frames, unit);
     if (handles) *status = SGTimePitchRender(unit, frames, data);
     // An errored render may already have pulled input. Do not pull it a second time as a fallback.
@@ -224,6 +233,11 @@ static void prepareOutput(AudioUnit unit) {
 
 #pragma mark - engaging the unit
 
+// Pitch follows speed where speed applies, in the chain.
+static BOOL following(void) {
+    return sg_follows && tapped();
+}
+
 // Stops the render thread using a unit, and returns once it no longer is.
 static void disengage(void) {
     atomic_store(&sg_engaged, false);
@@ -233,7 +247,7 @@ static void disengage(void) {
 // The unit for the output's format and the way in use, made when there is none or the format changed. A
 // replaced one is never freed: the render thread may still hold it, and a format change is rare.
 static SGTimePitch *unitForFormat(void) {
-    BOOL pull = tapped();
+    BOOL pull = tapped(), varispeed = following();
     Format *format = pull ? &sg_client : &sg_hardware;
     double rate;
     uint64_t bits = atomic_load(&format->rateBits);
@@ -250,19 +264,22 @@ static SGTimePitch *unitForFormat(void) {
         }
     }
     if (rate <= 0 || channels < 1 || channels > kSGTimePitchMaxChannels) return NULL;
-    _Atomic(SGTimePitch *) *slot = pull ? &sg_pull : &sg_inPlace;
+    _Atomic(SGTimePitch *) *slot = varispeed ? &sg_varispeed : pull ? &sg_pull : &sg_inPlace;
     pthread_mutex_lock(&sg_buildLock);
     SGTimePitch *unit = atomic_load(slot);
     if (!unit || SGTimePitchSampleRate(unit) != rate || SGTimePitchChannels(unit) != channels) {
         BOOL wasEngaged = atomic_load(&sg_engaged);
         disengage();
-        unit = SGTimePitchCreate(rate, channels, pull ? pullForUnit : NULL, NULL);
+        unit = varispeed ? SGTimePitchCreateVarispeed(rate, channels, pullForUnit, NULL)
+                         : SGTimePitchCreate(rate, channels, pull ? pullForUnit : NULL, NULL);
         if (unit) {
             SGTimePitchSetRate(unit, pull ? sg_speed : 1);
             SGTimePitchSetSemitones(unit, sg_semitones);
         }
         atomic_store(slot, unit);
-        SGLog(@"redesign speed: %@ %@ for %.0f Hz, %u channels", unit ? @"a unit" : @"no unit", pull ? @"in the chain" : @"in place", rate, (unsigned)channels);
+        if (pull) atomic_store(&sg_chain, unit);
+        SGLog(@"redesign speed: %@ %@ for %.0f Hz, %u channels", unit ? (varispeed ? @"a varispeed" : @"a unit") : @"no unit",
+              pull ? @"in the chain" : @"in place", rate, (unsigned)channels);
         if (unit && wasEngaged) atomic_store(&sg_engaged, true);
     }
     pthread_mutex_unlock(&sg_buildLock);
@@ -270,9 +287,10 @@ static SGTimePitch *unitForFormat(void) {
 }
 
 static void report(void) {
-    SGTimePitch *unit = atomic_load(tapped() ? &sg_pull : &sg_inPlace);
+    SGTimePitch *unit = atomic_load(tapped() ? &sg_chain : &sg_inPlace);
     if (!unit) return;
-    SGLog(@"redesign speed: %.2fx, %+.0f st, %u underruns, %u failures, largest pull %u, %.1f s of input", sg_speed, sg_semitones,
+    SGLog(@"redesign speed: %.2fx, %@, %u underruns, %u failures, largest pull %u, %.1f s of input", sg_speed,
+          SGTimePitchIsVarispeed(unit) ? @"pitch following" : [NSString stringWithFormat:@"%+.0f st", sg_semitones],
           SGTimePitchUnderruns(unit), SGTimePitchFailures(unit), SGTimePitchLargestPull(unit),
           SGTimePitchConsumed(unit) / SGTimePitchSampleRate(unit));
 }
@@ -297,6 +315,12 @@ static void apply(void) {
     }
     SGTimePitchSetRate(unit, tapped() ? sg_speed : 1);
     SGTimePitchSetSemitones(unit, sg_semitones);
+    if (tapped() && atomic_load(&sg_chain) != unit) {
+        // Pitch began or stopped following speed: the other unit takes the chain over, from silence.
+        disengage();
+        atomic_store(&sg_chain, unit);
+        SGLog(@"redesign speed: the %@ takes over at %.2fx", SGTimePitchIsVarispeed(unit) ? @"varispeed" : @"time and pitch unit", sg_speed);
+    }
     if (!normal && !atomic_load(&sg_engaged)) {
         disengage();
         SGTimePitchReset(unit);
@@ -307,7 +331,7 @@ static void apply(void) {
 #pragma mark - the menu's calls
 
 double SGPlayerAudioLatency(void) {
-    SGTimePitch *unit = atomic_load(&sg_pull);
+    SGTimePitch *unit = atomic_load(&sg_chain);
     return atomic_load(&sg_engaged) && unit ? SGTimePitchLatency(unit) : 0;
 }
 
@@ -331,13 +355,26 @@ float SGPlayerPitch(void) {
 }
 
 void SGSetPlayerPitch(float semitones) {
-    if (!SGAudioPipelineAvailable() && !tapped()) return;
+    if ((!SGAudioPipelineAvailable() && !tapped()) || following()) return;
     sg_semitones = semitones;
     apply();
 }
 
 BOOL SGPlayerPitchAvailable(void) {
     return SGAudioPipelineAvailable() || tapped();
+}
+
+BOOL SGPlayerPitchFollowsSpeed(void) {
+    return following();
+}
+
+void SGSetPlayerPitchFollowsSpeed(BOOL follows) {
+    SGSetEnabled(SGKeyPitchFollowsSpeed, follows);
+    if (sg_follows == follows) return;
+    sg_follows = follows;
+    // The pitch slider goes while pitch follows, so what it had set goes with it.
+    if (follows) sg_semitones = 0;
+    apply();
 }
 
 #pragma mark - Spotify's clock
@@ -352,6 +389,7 @@ BOOL SGPlayerPitchAvailable(void) {
 
 %ctor {
     storeFloat(&sg_speedBits, 1);
+    sg_follows = SGFlag(SGKeyPitchFollowsSpeed, NO);
     static const SGAudioProcessor processor = {prepareOutput, rendered};
     SGAudioPipelineRegister(SGAudioStageSpeedPitch, &processor);
     SGAudioPipelineSetPullProcessor(processPull);

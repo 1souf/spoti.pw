@@ -55,6 +55,8 @@ extern const CGFloat SGRPlayerMenuWidth;
 - (void)showLoading;
 // A row's line under its words, in place; nil takes it away.
 - (void)setSubtitle:(NSString *)subtitle forKey:(NSString *)key;
+// A row's view grew or shrank: its expansionHeight, in place, the card following when it is open.
+- (void)setExpansionHeight:(CGFloat)height forKey:(NSString *)key;
 // The content's height at SGRPlayerMenuWidth, uncapped.
 - (CGFloat)preferredHeight;
 

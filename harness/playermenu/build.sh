@@ -14,7 +14,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     -I"$SRC" -I"$SRC/Redesigned/Player" -I"$SRC/Shared/Player" -isysroot "$SDK" -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$OUT"/gen/*.m "$SRC"/Redesigned/Player/SGRPlayerMenu.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
-    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
+    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Settings/SGPageStyle.m \
     "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRRestyle.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation \
     -o "$OUT/PlayerMenuHarness.app/PlayerMenuHarness"

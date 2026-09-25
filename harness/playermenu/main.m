@@ -11,7 +11,8 @@
 //     xcrun simctl launch --console-pty <udid> com.vojta.playermenuharness [scenario] [loading] [stuck]
 //
 // Scenarios, each starting with a tap on the ⋯ at 1 s: hold (nothing more), more (opens More at 3 s),
-// speed (opens Speed and pitch at 3 s), tile (Add to playlist at 3 s), share (Share at 3 s: Spotify's page
+// speed (opens Speed and pitch at 3 s), follow (opens it, then turns pitch following speed on at 4.5 s and
+// off at 9 s: the panel folds its pitch slider away and back, the card with it), tile (Add to playlist at 3 s), share (Share at 3 s: Spotify's page
 // is pushed and its sheet shown), lyrics (More, then Lyrics: the row reads On), outside (a tap beside the
 // card at 3 s), pending (with `loading`: Add to playlist tapped before Spotify's rows are in, fired once
 // they are). `loading` hands the sheet its rows 1.5 s after it is up; `stuck` never does. The card opens on
@@ -30,6 +31,13 @@ void SGSetPlayerSpeed(double speed) { sg_speed = speed; NSLog(@"[harness] speed 
 float SGPlayerPitch(void) { return sg_pitch; }
 void SGSetPlayerPitch(float semitones) { sg_pitch = semitones; NSLog(@"[harness] pitch %.0f", semitones); }
 BOOL SGPlayerPitchAvailable(void) { return YES; }
+static BOOL sg_follows;
+BOOL SGPlayerPitchFollowsSpeed(void) { return sg_follows; }
+void SGSetPlayerPitchFollowsSpeed(BOOL follows) {
+    sg_follows = follows;
+    if (follows) sg_pitch = 0;
+    NSLog(@"[harness] pitch follows speed %d", follows);
+}
 UIColor *SGRAccentColor(void) { return nil; }
 
 static BOOL argument(NSString *name) {
@@ -401,6 +409,18 @@ static void dump(UIView *view, int depth, NSMutableString *out) {
     } else if (argument(@"speed")) {
         after(3, ^{ tap(window, @"Speed and pitch"); });
         after(4, ^{ report(window, @"Speed and pitch opened"); });
+    } else if (argument(@"follow")) {
+        after(3, ^{ tap(window, @"Speed and pitch"); });
+        after(4, ^{ report(window, @"Speed and pitch opened"); });
+        for (NSNumber *at in @[@4.5, @9]) after(at.doubleValue, ^{
+            // The card's: Speed and pitch's block is in Spotify's sheet as well, out of sight under it.
+            UISwitch *toggle = (UISwitch *)find(find(window, @"SGRPlayerMenuCard", nil), @"UISwitch", @"Pitch follows speed");
+            NSLog(@"[harness] switching pitch follows speed %@: %@", toggle.on ? @"off" : @"on", toggle ? @"found" : @"NOT FOUND");
+            toggle.on = !toggle.on;
+            [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        });
+        after(5.5, ^{ report(window, @"pitch follows speed"); });
+        after(10, ^{ report(window, @"pitch no longer follows"); });
     } else if (argument(@"tile")) {
         after(3, ^{ tap(window, @"Add to playlist"); });
         after(4, ^{ report(window, @"after Add to playlist"); });

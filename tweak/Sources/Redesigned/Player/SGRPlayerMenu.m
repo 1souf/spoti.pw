@@ -461,6 +461,26 @@ static void placeGlyph(UIImageView *glyph, CGRect box) {
     }
 }
 
+- (void)setExpansionHeight:(CGFloat)height forKey:(NSString *)key {
+    for (id entry in _plan) {
+        if (![entry isKindOfClass:SGRPlayerMenuRow.class] || ![((SGRPlayerMenuRow *)entry).item.key isEqualToString:key]) continue;
+        SGRPlayerMenuRow *row = entry;
+        if (fabs(row.item.expansionHeight - height) < 0.5) continue;
+        if (!row.expanded) {
+            row.item.expansionHeight = height;
+            continue;
+        }
+        [self layoutIfNeeded];
+        SGRAnimate(SGRMotionLayout, ^{
+            row.item.expansionHeight = height;
+            [self setNeedsLayout];
+            [self layoutIfNeeded];
+            if (self.sizeChanged) self.sizeChanged(self);
+            [self layoutIfNeeded];
+        }, nil);
+    }
+}
+
 #pragma mark taps
 
 - (void)tileTapped:(SGRPlayerMenuTile *)tile {

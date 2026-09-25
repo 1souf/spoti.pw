@@ -701,6 +701,8 @@ static SGRPlayerMenuTakeover *takeoverFor(UIViewController *menu) {
     t.speedObserver = [NSNotificationCenter.defaultCenter addObserverForName:SGSpeedPitchChangedNotification object:nil
                                                                       queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         [weak.card setSubtitle:note.userInfo[@"summary"] forKey:@"spotifyglass.speedPitch"];
+        // Pitch following speed folds its slider away, and the panel with it.
+        [weak.card setExpansionHeight:SGSpeedPitchPanelHeight() forKey:@"spotifyglass.speedPitch"];
     }];
     t.poll = [NSTimer timerWithTimeInterval:kRowsPoll repeats:YES block:^(NSTimer *timer) {
         SGRPlayerMenuTakeover *strong = weak;
