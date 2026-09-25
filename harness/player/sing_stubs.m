@@ -5,8 +5,10 @@ NSString *const SGSingDidChangeNotification = @"spotifyglass.singChanged";
 static SGSingState state = SGSingIdle;
 static float level = SGSingMinimumVocalLevel, reduced = SGSingMinimumVocalLevel;
 static NSUInteger generation;
-BOOL SGSingConfigured(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"sing-ui"]; }
-SGSingState SGSingCurrentState(void) { return state; }
+SGSingState SGSingCurrentState(void) {
+    return [NSUserDefaults.standardUserDefaults boolForKey:@"sing-ui"] ? state : SGSingUnavailable;
+}
+BOOL SGSingAvailable(void) { return SGSingCurrentState() != SGSingUnavailable; }
 NSString *SGSingExplanation(void) { return @"Test model unavailable"; }
 BOOL SGSingCanRetry(void) { return ![NSUserDefaults.standardUserDefaults boolForKey:@"sing-blocked"]; }
 float SGSingVocalLevel(void) { return level; }

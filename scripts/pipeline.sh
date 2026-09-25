@@ -86,13 +86,6 @@ TWEAK_DEB="$(ls -t "$ROOT"/tweak/packages/*.deb | head -1)"
 echo "    $TWEAK_DEB"
 
 FILES=("$TWEAK_DEB")
-# Optional local voice model, produced by harness/sing/package_model.py. No download at build or
-# playback time. Without this resource Sing remains unavailable and its setting defaults off.
-if [ -n "${SING_MODEL_BUNDLE:-}" ]; then
-  [ -d "$SING_MODEL_BUNDLE/separator.mlmodelc" ] \
-    || { echo "invalid SING_MODEL_BUNDLE: package the local compiled model first" >&2; exit 1; }
-  FILES+=("$SING_MODEL_BUNDLE")
-fi
 [ "$WITH_FLEX" = 1 ] && FILES+=("$FLEX_DEB")
 
 # The Live Activity (Shared/LiveActivity) draws in a widget extension of its own.

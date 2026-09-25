@@ -17,8 +17,8 @@ parser.add_argument("output", type=Path, help="new local export directory")
 parser.add_argument("--precision", choices=("mixed", "float32"), default="mixed",
                     help="the mixed-precision model Sing uses, or the full-precision comparison model")
 parser.add_argument("--unpinned-tools", action="store_true",
-                    help="export with the installed torch/coremltools; the result will not match the pinned "
-                         "payload hashes, so package it with package_model.py --unpinned")
+                    help="export with the installed torch/coremltools; the graph will not match the pinned "
+                         "payload hashes (the public coremltools 9.0 export is export.unpinnedPayloadHashes)")
 args = parser.parse_args()
 manifest = json.loads((Path(__file__).parent / "model.json").read_text())
 profile = manifest["export"]

@@ -119,8 +119,11 @@ Shared:
                   uses the GPU in the foreground and its warm CPU model in the background. The audible
                   clock follows emitted source samples while delayed audio drains. Model loading overlaps source capture;
                   verified continuous next-track PCM keeps its worker and reserve across a natural transition.
-                  Redesigned/Lyrics owns the
-                  Now Playing microphone control; the model is an optional local Sing.bundle (harness/sing/)
+                  Redesigned/Lyrics owns the Now Playing microphone control and the Karaoke section. The voice
+                  model (about 470 MB) is not in the IPA: SGSingModel.m downloads its files from the model host in a
+                  background URL session, checks each against a size and a SHA-256 pinned in the code, and moves
+                  them into Application Support/spoti.pw/Sing only when all are right (SingModel.x reconnects at
+                  launch). Tested against harness/sing/ (the download against a local server, model_test.py)
     Player/       the player's open and close announced (PlayerEvents.x), what the player is doing read through
                   one hook for every feature that wants it (PlayerState.x), the lock screen widget's flags, and in the
                   more button's menu Speed and pitch: both done to Spotify's audio by Apple's time and pitch unit, put
@@ -199,7 +202,8 @@ Redesigned:
                   sheet, and a sheet with no rows within 4 s is shown as it is. It opens on the rows the last
                   menu had, kept across launches, and moves to Spotify's as they come in, a tap meanwhile held
                   until they do. Always on in the redesign. Tested in the simulator against harness/playermenu/
-                  With Sing on (Lyrics > Sing), its microphone (Redesigned/Lyrics/SGRSingControl.m) sits in the
+                  With Sing on and its voice model downloaded (Lyrics > Karaoke, Redesigned/Lyrics/SingSettings.m,
+                  both applying at once), its microphone (Redesigned/Lyrics/SGRSingControl.m) sits in the
                   lyrics' bottom trailing corner, opposite their glass button, and goes down with the lines when the
                   controls go; while it is open, preparing or explaining itself the controls stay, and a touch on it
                   does not bring them back

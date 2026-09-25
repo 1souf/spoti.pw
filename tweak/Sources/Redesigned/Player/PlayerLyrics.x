@@ -35,12 +35,14 @@
 // back, and a tap that does so does only that: it does not seek to the line under it. Pausing brings
 // them back as well, and they stay while the song is paused. VoiceOver keeps them.
 //
-// With Sing on (Shared/Sing), its microphone (Redesigned/Lyrics/SGRSingControl.h) sits in the bottom
-// trailing corner of the lines' band, opposite their own glass button, and goes down with the band when
-// the controls go. While it is open, preparing or explaining itself the controls do not go, but ones that
-// are away already stay away: a touch on the microphone is for it and brings nothing back, since the
-// band it sits in would move it out from under the finger. The lines open with Sing on even for a song
-// without lyrics, so the microphone can always be reached.
+// With Sing available (Shared/Sing: switched on in Lyrics > Karaoke, its voice model downloaded), its
+// microphone (Redesigned/Lyrics/SGRSingControl.h) sits in the bottom trailing corner of the lines' band,
+// opposite their own glass button, and goes down with the band when the controls go. While it is open,
+// preparing or explaining itself the controls do not go, but ones that are away already stay away: a
+// touch on the microphone is for it and brings nothing back, since the band it sits in would move it out
+// from under the finger. The lines open with Sing available even for a song without lyrics, so the
+// microphone can always be reached; switched off, or without its model, there is no microphone and a song
+// without lyrics keeps its cover. Both follow the switch and the model as they change.
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
@@ -91,7 +93,7 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
 @property (nonatomic, readonly) UIView *thumb;       // the cover, at full size, moved by its transform
 @property (nonatomic, readonly) UIImageView *cover;
 @property (nonatomic, readonly) UIView *stage;       // holds the lines' view alone
-@property (nonatomic, readonly) UILabel *empty;      // Sing's "no lyrics", nil without Sing
+@property (nonatomic, readonly) UILabel *empty;      // Sing's "no lyrics"
 @property (nonatomic, readonly) SGRKaraokeView *lyrics;
 @end
 
@@ -115,16 +117,14 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
     _stage = [[UIView alloc] initWithFrame:CGRectZero];
     // What the lines leave when a song has none, which only Sing opens them for. A sibling of the lines'
     // view, so it goes whenever they have something to show (SGRKaraokeView's syncSiblings).
-    if (SGSingConfigured()) {
-        _empty = [UILabel new];
-        _empty.text = @"Lyrics aren't available for this song.";
-        _empty.textColor = SGRSecondary();
-        _empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-        _empty.adjustsFontForContentSizeCategory = YES;
-        _empty.textAlignment = NSTextAlignmentCenter;
-        _empty.numberOfLines = 0;
-        [_stage addSubview:_empty];
-    }
+    _empty = [UILabel new];
+    _empty.text = @"Lyrics aren't available for this song.";
+    _empty.textColor = SGRSecondary();
+    _empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    _empty.adjustsFontForContentSizeCategory = YES;
+    _empty.textAlignment = NSTextAlignmentCenter;
+    _empty.numberOfLines = 0;
+    [_stage addSubview:_empty];
     [self addSubview:_stage];
     [self addSubview:_thumb];
     return self;
@@ -433,7 +433,7 @@ static void watchTouches(UIView *host) {
 
 BOOL SGRPlayerLyricsAvailable(void) {
     NSString *track = SGKaraokePlayingTrack();
-    return track != nil && (SGKaraokeLinesForTrack(track) != nil || SGSingConfigured());
+    return track != nil && (SGKaraokeLinesForTrack(track) != nil || SGSingAvailable());
 }
 
 BOOL SGRPlayerLyricsOpen(void) {
@@ -676,6 +676,18 @@ static void awaitLyrics(void) {
     }
 }
 
+// Sing switched on or off in Lyrics > Karaoke, or its voice model arriving or going: the lyrics' glyph and
+// the microphone follow at once, and lyrics that were open only for Sing put the cover back.
+static void singAvailabilityChanged(void) {
+    static BOOL available;
+    if (SGSingAvailable() == available) return;
+    available = !available;
+    SGRPlayerLyricsChanged();
+    if (!sg_open) return;
+    if (!SGRPlayerLyricsAvailable()) setOpen(NO, YES);
+    else replace();
+}
+
 @interface SGRPlayerLyricsWatcher : NSObject <SGPlayerStateObserver>
 @end
 
@@ -712,6 +724,9 @@ static SGRPlayerLyricsWatcher *sg_watcher;
     SGAddPlayerStateObserver(sg_watcher);
     [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         SGRPlayerLyricsChanged();
+    }];
+    [NSNotificationCenter.defaultCenter addObserverForName:SGSingDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        singAvailabilityChanged();
     }];
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
                                                      queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {

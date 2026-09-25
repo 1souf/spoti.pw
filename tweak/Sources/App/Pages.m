@@ -14,7 +14,7 @@
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Redesigned/Lyrics/LyricsText.h"
-#import "Redesigned/Lyrics/SGRSingControl.h"
+#import "Redesigned/Lyrics/Sing.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Redesigned/Kit/SGRAccent.h"
@@ -71,14 +71,15 @@ UIViewController *SGNavbarPage(void) {
     return SGRedesignedUIStored() ? SGRNavbarSettingsPage() : SGNavbarSettingsPage();
 }
 
-// Pronunciation, translation, word sweeping and line meanings exist only in the redesign's lyrics view.
+// Pronunciation, translation, word sweeping, line meanings and Sing exist only in the redesign's lyrics.
 static UIViewController *lyricsPage(void) {
     BOOL redesigned = SGRedesignedUIStored();
     NSMutableArray<SGModRow *> *more = [NSMutableArray arrayWithObject:SGLockScreenLyricsRow()];
     if (!redesigned) [more insertObject:SGGlassLyricsRow() atIndex:0];
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGLyricsSourcesSection(redesigned)];
     if (redesigned) {
-        [sections addObject:SGSection(@"Display", @[SGOptionRow(@"Sing", @"Reduce vocals with a compatible voice model; requires iOS 27", SGRKeySing), SGLyricsWordTimingRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow()])];
+        [sections addObject:SGSection(@"Display", @[SGLyricsWordTimingRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow()])];
+        [sections addObject:SGRKaraokeSection()];
     }
     [sections addObject:SGSection(nil, more)];
     return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];

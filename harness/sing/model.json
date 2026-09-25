@@ -41,6 +41,10 @@
     "referencePayloadHashes": {
       "model.mil": "79b83bfe1d161e466562dbd49bb6e1c07806dd4a565d52935b0555dade5f6cde",
       "weights/weight.bin": "e20adb85d15d0a9176657eae540078f750047abcdf34e7aa6f1a1ded8b1891f8"
+    },
+    "unpinnedPayloadHashes": {
+      "model.mil": "966560ed5125174a98f19b94f5de04450a7112ade0e731f2236c202c0280a623",
+      "weights/weight.bin": "970a99fb4b15724bf76d2918ceb177df592c69265d3e2fabaab6e5ba72738e62"
     }
   }
 }

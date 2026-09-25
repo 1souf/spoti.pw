@@ -1,9 +1,15 @@
 #import "Core/SGCore.h"
-#import "SGRSingControl.h"
+#import "Sing.h"
 #import "Shared/Sing/SGSingController.h"
+
+// Only the running look is told: a redesign switched on in Appearance but not yet restarted into takes the
+// switch as it finds it at its launch.
+void SGRSingApplySwitch(void) {
+    if (!SGRedesignedUI()) return;
+    SGSingConfigure(SGFlag(SGRKeySing, NO));
+}
 
 %ctor {
     if (!SGRedesignedUI()) return;
-    if (!SGFlag(SGRKeySing, NO)) return;
-    dispatch_async(dispatch_get_main_queue(), ^{ SGSingConfigure(YES); });
+    dispatch_async(dispatch_get_main_queue(), ^{ SGRSingApplySwitch(); });
 }

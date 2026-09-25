@@ -1,6 +1,7 @@
 #import "Core/SGCore.h"
 #import "SGRSingControl.h"
 #import "Shared/Sing/SGSingController.h"
+#import <objc/runtime.h>
 #import "Redesigned/Kit/SGRGlass.h"
 #import "Redesigned/Kit/SGRTokens.h"
 
@@ -396,8 +397,17 @@ static UIImage *singGlyph(void) {
 - (void)turnOff { SGSingSetEnabled(NO); self.expanded = NO; }
 @end
 UIView *SGRSingControlForPage(UIView *page, CGRect lyrics, BOOL immersive, void (^hold)(BOOL)) {
-    if (!SGSingConfigured() || !page || CGRectIsEmpty(lyrics)) return nil;
-    SGRSingControl *control = objc_getAssociatedObject(page, &kControlKey);
+    SGRSingControl *control = page ? objc_getAssociatedObject(page, &kControlKey) : nil;
+    if (!SGSingAvailable()) {
+        if (control) {
+            if (control.holding && control.hold) control.hold(NO);
+            [control.outside.view removeGestureRecognizer:control.outside];
+            [control removeFromSuperview];
+            objc_setAssociatedObject(page, &kControlKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return nil;
+    }
+    if (!page || CGRectIsEmpty(lyrics)) return nil;
     if (!control) {
         control = [[SGRSingControl alloc] initWithFrame:CGRectZero];
         objc_setAssociatedObject(page, &kControlKey, control, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

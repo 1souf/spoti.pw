@@ -193,15 +193,44 @@ with it.
 python harness/sing/export_coreml.py zoo ref MelBandRoformer.ckpt build/goldens/golden_raw.f32 export --unpinned-tools
 ```
 
-## Local Spotify build
+The model the app downloads is that public-tools export (`export.unpinnedPayloadHashes`).
 
-`package_model.py export/separator.mlmodelc out/Sing.bundle` packages the verified export with its
-notices and pinned provenance (`--unpinned` for an `--unpinned-tools` export). Pass
-`SING_MODEL_BUNDLE=/absolute/path/to/Sing.bundle` to `scripts/pipeline.sh` or `make release`; the
-build is complete without it. In the redesigned look, turn on **Lyrics → Sing** and restart
-Spotify. The microphone appears in the lyrics opened by Now Playing's lyrics button; its slider
-changes the running mix without reloading the model. Below iOS 27 or without the model, Sing says
-it is unavailable.
+## The model on the phone
+
+The model is not in the IPA. In the redesigned look, **Mod Settings → Player → Lyrics → Karaoke**
+has Sing's switch, which puts the microphone in the player's lyrics and takes it away at once (off,
+Sing does no work), and the voice model's row: Not downloaded, Downloading 43 % · 210 of 467 MB with
+a bar under it and Cancel download, Checking…, Downloaded · 467 MB with Remove voice model, or
+Paused / Download failed, whose tap says why. Below iOS 27 the section is a "Needs iOS 27" row.
+
+`Shared/Sing/SGSingModel.m` downloads the five files of `separator.mlmodelc` one by one from
+`https://huggingface.co/skopevoj/spoti-sing/resolve/main/<path>` (no archive: iOS has no public
+unzip) and pins each file's size and SHA-256 in its table; nothing the server says about them is
+trusted. It checks for free space first (the model plus 64 MB), asks before using a cellular or Low
+Data Mode network, and otherwise keeps off them and waits for Wi-Fi. The download runs in a
+background `URLSession`, so it goes on while Spotify is away; the app delegate is given
+`application:handleEventsForBackgroundURLSession:completionHandler:` for it (Spotify's has none), and
+a launch reconnects to a download left running by the session's identifier. Each file lands in
+`Library/Application Support/spoti.pw/Sing/Download/`, is hashed off the main thread and named there
+only if it is the pinned one; a file that is not is deleted and stops the download. Cancel keeps each
+file's resume data, and Download goes on from it (a resume that fails starts that file over, once).
+Once every file is in, the staged `separator.mlmodelc` becomes
+`Library/Application Support/spoti.pw/Sing/separator.mlmodelc` in one rename, and the folder is
+excluded from the iCloud backup. Remove deletes the folder and drops the warm model. The controller
+loads the model from there; without it Sing is unavailable and the lyrics show no microphone.
+
+```sh
+python3 harness/sing/stage_model.py export/separator.mlmodelc build/spoti-sing
+python3 harness/sing/model_test.py build/spoti-sing
+```
+
+`stage_model.py` makes the folder to upload to the model repository, the model's files at their
+paths with `NOTICE` and a model card, and prints the manifest the way `SGSingModel.m` pins it,
+saying whether the code pins that one; a new export needs the table replaced before it ships.
+`model_test.py` serves such a folder on localhost and runs the production download code against it
+in a real background session on the Mac (ASan/UBSan): a corrupted `model.mil` rejected and deleted, a
+cancel at 100 MB resumed from where it stopped (the server sees the range), the install, a download
+left running by one process and picked up by the next, and removal.
 
 ## Model provenance
 

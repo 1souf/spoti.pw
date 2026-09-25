@@ -39,7 +39,10 @@ SPTPlayerState *SGPlayerState(void) { return player; }
 double SGSingSourcePosition(SPTPlayerState *state) { return 10; }
 double SGPlayerAudioLatency(void) { return 0; }
 double SGPlayerSpeed(void) { return 1; }
-BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
+NSNotificationName const SGSingModelDidChangeNotification = @"test.singModelChanged";
+static NSString *modelPath = @"fixture";
+NSString *SGSingModelPath(void) { return modelPath; }
+static void modelChanged(void) { [NSNotificationCenter.defaultCenter postNotificationName:SGSingModelDidChangeNotification object:nil]; }
 void SGStemWorkerPurge(void) { purges++; }
 void *SGStemWorkerStart(void *context, const char *path, uint32_t windowFrames, uint32_t hopFrames, SGStemRead read, SGStemWrite write, SGStemStatus status) {
     assert(starts < 24); unsigned n = starts++;
@@ -81,8 +84,9 @@ int main(void) { @autoreleasepool {
     Method getter = class_getInstanceMethod(infoClass, @selector(thermalState));
     class_replaceMethod(infoClass, @selector(thermalState), (IMP)thermal, method_getTypeEncoding(getter));
     player = [SPTPlayerState new];
-    sg_configured = YES; sg_controller = [SGSingController new];
-    sg_controller.state = SGSingIdle; sg_controller.model = @"fixture";
+    assert(!SGSingAvailable());
+    SGSingConfigure(YES);
+    assert(SGSingAvailable() && SGSingCurrentState() == SGSingIdle);
     assert(SGSingVocalLevel() == .2f && SGSingReducedLevel() == .2f);
     SGSingSetVocalLevel(-1); assert(SGSingVocalLevel() == .2f);
     SGSingSetVocalLevel(0); assert(SGSingVocalLevel() == .2f);
@@ -380,5 +384,38 @@ int main(void) { @autoreleasepool {
     assert(!attached && !sg_controller.session && sg_controller.retired.count == 1);
     SGSingSetEnabled(NO); report(transitionJob, SGStemFinished);
     assert(!sg_controller.retired.count && starts == cancels);
-    puts("sing controller: thermal gating, retirement races, concurrent cold preparation, next-track/repeat continuity, retained 70% and explicit Off passed");
+    // Sing's switch turned off while it is on stops the work, lets the model go and shows nothing; the
+    // intent goes with it. Turned on again, Sing is back, off, with its level kept.
+    unsigned job = starts;
+    repeatTrack = NO; nextURI = nil; naturalBoundary = UINT64_MAX;
+    trackURI = @"spotify:track:switch"; [sg_controller playerStateDidChange:player];
+    paused = YES; SGSingSetEnabled(YES); report(job, SGStemReady);
+    assert(SGSingCurrentState() == SGSingReady && SGSingAvailable() && attached);
+    unsigned purged = purges;
+    SGSingConfigure(NO);
+    assert(!SGSingAvailable() && SGSingCurrentState() == SGSingUnavailable && !SGSingEnabled());
+    assert(purges > purged && !attached && !sg_controller.session);
+    report(job, SGStemFinished);
+    SGSingSetEnabled(YES);
+    for (int n = 0; n < 10; n++) [sg_controller reconcile];
+    assert(starts == cancels && starts == job + 1 && !SGSingEnabled());
+    SGSingConfigure(YES);
+    assert(SGSingAvailable() && SGSingCurrentState() == SGSingIdle && SGSingVocalLevel() == .7f);
+    // The model removed while Sing is on: unavailable until it is back, and nothing starts meanwhile.
+    SGSingSetEnabled(YES); report(job + 1, SGStemReady);
+    assert(SGSingCurrentState() == SGSingReady && attached);
+    purged = purges;
+    modelPath = nil; modelChanged();
+    assert(!SGSingAvailable() && !SGSingEnabled() && !attached && !sg_controller.session && purges > purged);
+    report(job + 1, SGStemFinished);
+    SGSingSetEnabled(YES);
+    for (int n = 0; n < 10; n++) [sg_controller reconcile];
+    assert(starts == cancels && starts == job + 2 && SGSingCurrentState() == SGSingUnavailable);
+    modelPath = @"fixture"; modelChanged();
+    assert(SGSingAvailable() && SGSingCurrentState() == SGSingIdle);
+    SGSingSetEnabled(YES); report(job + 2, SGStemReady);
+    assert(SGSingCurrentState() == SGSingReady);
+    SGSingSetEnabled(NO); report(job + 2, SGStemFinished);
+    assert(!attached && !sg_controller.session && starts == cancels);
+    puts("sing controller: thermal gating, retirement races, concurrent cold preparation, next-track/repeat continuity, retained 70%, explicit Off, the switch and the model coming and going passed");
 } return 0; }

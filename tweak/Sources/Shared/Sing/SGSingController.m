@@ -2,6 +2,7 @@
 #import "SGSingController.h"
 #import "SGSingAudio.h"
 #import "SGSingFormat.h"
+#import "SGSingModel.h"
 #import "SGStemWorker.h"
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Shared/Player/PlayerState.h"
@@ -110,19 +111,12 @@ static void workerStatus(void *context, int32_t status) {
     if (!(self = [super init])) return nil;
     _retired = [NSMutableSet set];
     _level = _reduced = SGSingMinimumVocalLevel;
-    _state = SGSingIdle;
-    NSBundle *bundle = [NSBundle bundleWithPath:[NSBundle.mainBundle pathForResource:@"Sing" ofType:@"bundle"]];
-    _model = [bundle pathForResource:@"separator" ofType:@"mlmodelc"];
-    // Each check says what it found, so the alert names the one thing missing. A release has no model:
-    // it comes from SING_MODEL_BUNDLE at build time (harness/sing/README.md).
-    NSString *missing = !SGSingSupported() ? @"Sing requires iOS 27."
-        : !_model ? @"This build doesn't include Sing's voice model." : nil;
-    if (missing) {
-        _state = SGSingUnavailable;
-        _explanation = missing;
-    }
+    // Without its voice model Sing is unavailable and shows nothing; Lyrics > Karaoke says why and gets it.
+    _model = SGSingModelPath();
+    _state = _model ? SGSingIdle : SGSingUnavailable;
     SGAddPlayerStateObserver(self);
     NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+    [nc addObserver:self selector:@selector(modelChanged:) name:SGSingModelDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(memory:) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     [nc addObserver:self selector:@selector(thermal:) name:NSProcessInfoThermalStateDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(route:) name:AVAudioSessionRouteChangeNotification object:nil];
@@ -130,6 +124,8 @@ static void workerStatus(void *context, int32_t status) {
     return self;
 }
 - (void)publish:(SGSingState)state explanation:(NSString *)explanation {
+    // Retained audio still draining after the model went must not bring the microphone back.
+    if (!_model) { state = SGSingUnavailable; explanation = nil; }
     if (_state == state && ((_explanation == explanation) || [_explanation isEqualToString:explanation])) return;
     SGLog(@"Sing state %lu -> %lu, thermal %ld%@", (unsigned long)_state, (unsigned long)state,
           (long)NSProcessInfo.processInfo.thermalState, explanation ? [@": " stringByAppendingString:explanation] : @"");
@@ -402,6 +398,30 @@ static void workerStatus(void *context, int32_t status) {
         [self reconcile];
     });
 }
+// Unavailable without the model, and back to off once it is there.
+- (void)updateAvailability {
+    if (!_model) [self publish:SGSingUnavailable explanation:nil];
+    else if (_state == SGSingUnavailable) [self publish:SGSingIdle explanation:nil];
+}
+// The model downloaded or removed from Lyrics > Karaoke. Going, it takes Sing with it: the original audio
+// still retained plays out in order, and the warm model is let go before its files are.
+- (void)modelChanged:(NSNotification *)note {
+    NSString *model = SGSingModelPath();
+    if (model == _model || [model isEqualToString:_model]) return;
+    _model = model;
+    if (!model) {
+        _wanted = NO; _blockedTrack = nil; _waitingForCommand = NO;
+        [self stop:NO unload:YES];
+    }
+    [self updateAvailability];
+}
+// Sing's switch, turned while Spotify runs. Off stops the work the same way and leaves nothing on screen.
+- (void)setConfigured:(BOOL)configured {
+    if (configured) { [self updateAvailability]; return; }
+    _wanted = NO; _blockedTrack = nil; _waitingForCommand = NO;
+    [self stop:NO unload:YES];
+    [self publish:SGSingUnavailable explanation:nil];
+}
 // A seek or a skip replaces the running generation; Sing prepares the new position once it lands.
 - (void)awaitCommand:(NSString *)track seek:(double)seconds {
     _commandTrack = track; _seekTarget = seconds;
@@ -417,15 +437,17 @@ BOOL SGSingSupported(void) {
     return NO;
 }
 void SGSingConfigure(BOOL enabled) {
+    enabled = enabled && SGSingSupported();
+    if (enabled == sg_configured) return;
     sg_configured = enabled;
-    if (sg_configured && !sg_controller) sg_controller = [SGSingController new];
+    if (enabled && !sg_controller) sg_controller = [SGSingController new];
+    [sg_controller setConfigured:enabled];
+    // What SGSingAvailable answers changes with the switch even where the controller's own state does not.
+    [NSNotificationCenter.defaultCenter postNotificationName:SGSingDidChangeNotification object:nil];
 }
-BOOL SGSingConfigured(void) { return sg_configured; }
 SGSingState SGSingCurrentState(void) { return sg_configured ? sg_controller.state : SGSingUnavailable; }
-NSString *SGSingExplanation(void) {
-    return sg_controller.state == SGSingUnavailable ? sg_controller.explanation :
-        [sg_controller restriction] ?: sg_controller.explanation;
-}
+BOOL SGSingAvailable(void) { return SGSingCurrentState() != SGSingUnavailable; }
+NSString *SGSingExplanation(void) { return [sg_controller restriction] ?: sg_controller.explanation; }
 BOOL SGSingCanRetry(void) {
     return sg_configured && sg_controller.state != SGSingUnavailable && !sg_controller.session &&
         !sg_controller.retired.count && ![sg_controller restriction] && !SGPlayerState().isLoading;
