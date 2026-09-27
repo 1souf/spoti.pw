@@ -14,7 +14,7 @@ no scene delegate. `SRC=<another checkout>/tweak/Sources OUT=<dir> ./build.sh` b
 sources, for example an older commit, to see a bug before its fix.
 
 `build.sh` runs `logos.pl -c generator=internal` over `PlayerLyrics.x`, `PlayerArtwork.x`,
-`PlayerFooter.x`, `PlayerScroll.x`, `PlayerField.x` and the Kit's `SGRBridges.x`, and links them with
+`PlayerFooter.x`, `PlayerControls.x`, `PlayerScroll.x`, `PlayerField.x` and the Kit's `SGRBridges.x`, and links them with
 the real `Core/`, `Redesigned/Kit/` and `SGRKaraokeView`. `stubs.m` stands in for the hooks the harness
 does not compile (the Kit's accent and repaint, the rest of the player, the lyrics store, the haptics)
 and plays a mock player: `SGRHarnessSetTrack` reports a track, with the image ids Spotify's metadata
@@ -32,6 +32,15 @@ come late, out of order, or not at all.
   Kit's last look), two skips come in a row with the older picture answering last, and one track plays
   offline. Each step checks by colour that the Kit and the field show that track's picture, and the log
   ends with `artwork checks: n of 4 right -- PASS` or `FAIL`. Before the fix it read 1 of 4.
+- `taps` puts real touches on the player (`touches.m`, KIF's way: a UITouch and an IOHIDEvent sent
+  through UIApplication, so hit testing, gesture recognizers and UIControl tracking all run): taps on
+  the progress bar, on and beside it, with the lyrics up and not, the thumb's own drag and a tap on it,
+  the times and the rows around the bar, a lyric line, and the lyrics' thumbnail with the controls
+  there and with the lines alone. The duration unit is Spotify's position slider under its own class
+  name, wired the way the binary wires it (began on touch down, a seek on touch up). The log ends with
+  `tap checks: n of 25 right -- PASS` or `FAIL`. The iOS 26 UISlider lets go of a touch only once its
+  thumb has settled, and a tap is delivered to the views late through the list's delayed touches, as
+  on the phone.
 
 `HARNESS_VOLUME=0` leaves out the volume row that the phone has and the tree does not.
 `HARNESS_FREE=1` builds the units under the class names Spotify Free's player gives them

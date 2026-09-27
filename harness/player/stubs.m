@@ -1,5 +1,5 @@
 // What the player harness does not compile: the Kit's hooks (SGRAccent.x, SGRRepaint.x), the rest of
-// the player's hooks, the lyrics store and the haptics. Everything here answers the way the phone would
+// the player's hooks, the lyrics store, Genius's meanings and the haptics. Everything here answers the way the phone would
 // for one track with lyrics, so the redesign's own code is what is being looked at. The player itself
 // is a mock the harness drives: SGRHarnessSetTrack reports a track change to every observer.
 #import <UIKit/UIKit.h>
@@ -70,25 +70,24 @@ void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused) {
     for (id<SGPlayerStateObserver> observer in sg_observers.allObjects) [observer playerStateDidChange:state];
 }
 
-#pragma mark - Redesigned/Player/PlayerControls.x
-
-void SGRPlayerVanish(UIView *view) {
-    view.alpha = 0;
-    view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 #pragma mark - Shared/Haptics
 
-void SGPlayFeedback(NSInteger feedback) {}
+static NSUInteger sg_skipTaps;
+void SGPlayFeedback(NSInteger feedback) {
+    if (feedback == 2) sg_skipTaps++;   // SGFeedbackSkip: a lyric line, or a tap on the bar
+}
+NSUInteger SGRHarnessSkipTaps(void) { return sg_skipTaps; }
 void SGPrepareFeedback(NSInteger feedback) {}
 
-#pragma mark - Shared/LyricsSources
+#pragma mark - Shared/LyricsSources, Shared/LyricsMeanings, Redesigned/Lyrics/MeaningSheet.m
 
 NSString *SGLyricsCreditFor(NSString *trackID) { return @"the harness"; }
+void SGLyricsMeaningsFor(NSString *trackID, NSArray *lines, void (^done)(NSDictionary *byLine)) {}
+void SGRShowMeanings(NSString *lineText, NSArray *meanings) {}
 
 #pragma mark - Shared/Lyrics/KaraokeSource.x
 
+NSNotificationName const SGKaraokeLinesDidChangeNotification = @"spotifyglass.karaokeLinesChanged";
 static NSArray<SGKaraokeLine *> *sg_lines;
 static NSString *sg_track = @"harness";
 static NSInteger sg_position;
@@ -107,8 +106,15 @@ NSInteger SGKaraokePositionMs(void) {
     if (!sg_started) return sg_position;
     return sg_position + (NSInteger)((CACurrentMediaTime() - sg_started) * 1000);
 }
-void SGKaraokeSeek(NSInteger ms) {
+static NSUInteger sg_lineSeeks;
+void SGRHarnessPlayFrom(NSInteger ms) {
     sg_position = ms;
     sg_started = CACurrentMediaTime();
 }
-void SGRHarnessPlayFrom(NSInteger ms) { SGKaraokeSeek(ms); }
+// Only the lyrics seek through here; the progress bar's unit plays from the harness's own call.
+void SGKaraokeSeek(NSInteger ms) {
+    sg_lineSeeks++;
+    NSLog(@"[harness] a line seeks to %ld ms", (long)ms);
+    SGRHarnessPlayFrom(ms);
+}
+NSUInteger SGRHarnessLineSeeks(void) { return sg_lineSeeks; }
