@@ -592,7 +592,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 
 %ctor {
     SGLyricsMigrateLegacyKeys();
-    if (!SGLyricsEnabled()) return;
+    if (!SGLyricsActive()) return;
     %init(SGLyricsReplies);
     BOOL everyTrack = SGFlag(SGKeyLyricsAllTracks, NO);
     if (everyTrack) {

@@ -11,6 +11,8 @@
 #import "LyricsSources.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Headers/SPTPlayer.h"
+#import <mach-o/dyld.h>
+#import <objc/runtime.h>
 #import <stdatomic.h>
 
 static const NSTimeInterval kTimeout = 6;
@@ -195,6 +197,44 @@ void SGLyricsSetOrder(NSArray<NSString *> *keys) {
 
 BOOL SGLyricsEnabled(void) {
     return SGLyricsOrder().count > 0;
+}
+
+// Every EeveeSpotify fork keeps its source here, 4 being Do Not Replace Lyrics; unset is its default,
+// which replaces.
+static NSString *const kEeveeLyricsSource = @"lyricsSource";
+static const NSInteger kEeveeNotReplaced = 4;
+
+static BOOL eeveeLoaded(void) {
+    static BOOL loaded;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        loaded = objc_getClass("_TtC12EeveeSpotify27EeveeSettingsViewController") != nil;
+        for (uint32_t i = 0, count = _dyld_image_count(); i < count && !loaded; i++) {
+            const char *path = _dyld_get_image_name(i);
+            const char *name = path ? strrchr(path, '/') : NULL;
+            loaded = name && strcasestr(name, "eevee");
+        }
+    });
+    return loaded;
+}
+
+BOOL SGLyricsEeveeReplaces(void) {
+    if (!eeveeLoaded()) return NO;
+    id source = [NSUserDefaults.standardUserDefaults objectForKey:kEeveeLyricsSource];
+    return ![source respondsToSelector:@selector(integerValue)] || [source integerValue] != kEeveeNotReplaced;
+}
+
+BOOL SGLyricsActive(void) {
+    static BOOL active;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        active = SGLyricsEnabled();
+        if (active && SGLyricsEeveeReplaces()) {
+            active = NO;
+            SGLog(@"lyrics: EeveeSpotify replaces lyrics itself, the sources stay off");
+        }
+    });
+    return active;
 }
 
 #pragma mark - what is known about the track
@@ -467,7 +507,7 @@ NSString *const SGLyricsOwnRequestKey = @"spotifyglass.ownRequest";
 id SGLyricsForcedFlag(NSString *key) {
     static BOOL on;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ on = SGLyricsEnabled(); });
+    dispatch_once(&once, ^{ on = SGLyricsActive(); });
     if (!on) return nil;
     if ([key isEqualToString:@"ios-nowplaying-scroll-impl.scroll_cards_async_loading_timeout_ms"]) return @5000;
     return nil;

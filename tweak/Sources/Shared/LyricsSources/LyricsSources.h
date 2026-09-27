@@ -69,6 +69,11 @@ SGLyricsProvider *SGLyricsProviderFor(NSString *key);
 NSArray<NSString *> *SGLyricsOrder(void);
 void SGLyricsSetOrder(NSArray<NSString *> *keys);
 BOOL SGLyricsEnabled(void);   // any source at all is on
+// EeveeSpotify injected with its own lyrics on. It answers color-lyrics in the same delegate calls with a
+// fetch that blocks the calling thread, and LyricsHook makes those calls from the main queue.
+BOOL SGLyricsEeveeReplaces(void);
+// A source is on and EeveeSpotify is not replacing lyrics; what the hooks go by, read once at launch.
+BOOL SGLyricsActive(void);
 
 // Asks the sources in order and merges what they give, on the main queue. nil when none had lyrics.
 void SGLyricsFetch(NSString *trackID, void (^done)(SGLyricsResult *result));

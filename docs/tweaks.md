@@ -93,7 +93,9 @@ Shared:
                   Spotify has lyrics for, so one is added to any list without it: that is what makes the player ask for the
                   lyrics and show the card. has_lyrics is forced on for every track, the walk starts at the track change
                   for it and the next, and the player's card-loading timeout flag is forced to its 5 s maximum while a
-                  source is on
+                  source is on. None of it runs while EeveeSpotify is injected with its own lyrics on (SGLyricsActive()):
+                  its hook on the same delegate calls blocks on a lyrics fetch, and LyricsHook calls it from the main
+                  queue. The Lyrics page says so
     LockScreenLyrics/ the line being sung in the system's now playing
     LockScreenArtwork/ the track's Canvas or its album's Apple Music cover as the lock screen's animated
                   artwork, from iOS 26 (Apple takes an MPMediaItemAnimatedArtwork under one of
