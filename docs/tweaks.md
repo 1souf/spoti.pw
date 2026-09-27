@@ -110,6 +110,13 @@ Shared:
                   shape the key wants (Apple's 3:4 cover needs none) and kept under a 120 MB cap. Checked on
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
+    ConnectDiscovery/  Bonjour resolves local Spotify Connect receivers. When Spotify's own mDNS send
+                  fails without the multicast entitlement, a bounded round sends its query by IPv4/IPv6
+                  unicast to all resolved receivers and replays validated replies to Spotify's socket.
+                  A short wait also catches receivers still resolving. Connected sockets are left alone.
+                  The IPA declares Connect and Google Cast Bonjour service types; pipeline.sh keeps the
+                  IPA's existing types. This bridge handles Connect only; Cast is Bonjour-declared but
+                  has no equivalent packet bridge here.
     Audio/        the mixer connection and RemoteIO render notify owned once (SGAudioPipeline.x): fixed processor slots
                   run speed and pitch, audio effects, then music haptics. Graph changes and disposal exclude active pulls;
                   the render thread never waits for them. Unsupported formats retain Spotify's connection. The PCM
