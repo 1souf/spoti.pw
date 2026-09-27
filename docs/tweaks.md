@@ -113,7 +113,9 @@ Shared:
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
     Audio/        the mixer connection and RemoteIO render notify owned once (SGAudioPipeline.x): fixed processor slots
-                  run speed and pitch, audio effects, then music haptics. Graph changes and disposal exclude active pulls;
+                  run speed and pitch, audio effects, then music haptics. Spotify keeps an output chain per sample rate
+                  (a local file at another rate gets its own), so each RemoteIO pulls only its own mixer and the
+                  processors follow the one connected or started last. Graph changes and disposal exclude active pulls;
                   the render thread never waits for them. Unsupported formats retain Spotify's connection. The PCM
                   packet queue is bounded and generation-stamped. Sing's source read-ahead reads guarded queue metadata
                   for the verified Spotify binary; PCM still comes through its AudioUnit. Boundary tests are in harness/audio/ and harness/sing/
