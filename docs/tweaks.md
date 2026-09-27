@@ -259,7 +259,9 @@ App:
     About/         the update check against the repo's GitHub Releases, the Updates page it fills (the state, and
                    the changelog of every release newer than the build, a line per commit) and the sheet a newer
                    release brings up on its own a few seconds after Spotify opens, once per release; backup, the
-                   signing warning and the Mod page with the reset
+                   signing warning and the Mod page with the reset; how the app is signed (Certificate.m: free,
+                   paid, enterprise or no profile, sent with the usage ping), and for a free Apple ID a row with
+                   the day it runs out and, at most monthly, a certificate sheet worded by spoti.pw/api/certificate
     Onboarding/    the welcome page over Home on the first launch, with Redesigned UI, offered again from the Mod page
 
 Every key a feature stores starts with `spotifyglass.`, whatever it holds: Reset all settings on
