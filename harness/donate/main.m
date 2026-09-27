@@ -54,7 +54,7 @@ static UIViewController *home(void) {
         NSDictionary *offer = @{
             @"show": @YES,
             @"title": @"Re-signing every week?",
-            @"message": @"Your signature runs out on {date}. A certificate lasts a year.",
+            @"message": @"Your signature runs out on {date}. A certificate lasts a year, with no 3-app limit.",
             @"note": @"From $8.89 at Arctic Sign. spoti.pw gets a share.",
             @"action": @"Get a certificate",
             @"dismiss": @"Not now",
