@@ -610,18 +610,12 @@ static void replace(void) {
 %end
 
 // The header row goes with the rest of the controls while the lines are alone.
-%hook _TtC20NowPlaying_ModesImpl18HeaderElementsUnit
-- (void)viewDidLayoutSubviews {
-    %orig;
-    sg_header = (UIViewController *)self;
+static void headerLaidOut(UIViewController *unit) {
+    sg_header = unit;
     if (sg_alone) sg_header.viewIfLoaded.alpha = 0;
 }
-%end
 
-%hook _TtC20NowPlaying_ModesImpl23InformationElementsUnit
-- (void)viewDidLayoutSubviews {
-    %orig;
-    UIViewController *unit = (UIViewController *)self;
+static void infoLaidOut(UIViewController *unit) {
     sg_info = unit;
     UIView *host = unit.viewIfLoaded;
     // The title and the artist are two labels of one arranged element view, which is what moves.
@@ -637,13 +631,53 @@ static void replace(void) {
     }
     replace();
 }
+
+static void durationLaidOut(UIViewController *unit) {
+    sg_duration = unit;
+    replace();
+}
+
+%hook _TtC20NowPlaying_ModesImpl18HeaderElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    headerLaidOut((UIViewController *)self);
+}
+%end
+
+%hook _TtC20NowPlaying_ModesImpl23InformationElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    infoLaidOut((UIViewController *)self);
+}
 %end
 
 %hook _TtC20NowPlaying_ModesImpl19DurationElementUnit
 - (void)viewDidLayoutSubviews {
     %orig;
-    sg_duration = (UIViewController *)self;
-    replace();
+    durationLaidOut((UIViewController *)self);
+}
+%end
+
+// Spotify Free's player builds the same elements into units of its own (Player.h); its floating unit
+// is the shared one below.
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl43ReinventFreeNavigationBarUnitViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    headerLaidOut((UIViewController *)self);
+}
+%end
+
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    infoLaidOut((UIViewController *)self);
+}
+%end
+
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    durationLaidOut((UIViewController *)self);
 }
 %end
 
@@ -750,5 +784,8 @@ static SGRPlayerLyricsWatcher *sg_watcher;
         @"_TtC20NowPlaying_ModesImpl23InformationElementsUnit",
         @"_TtC20NowPlaying_ModesImpl19DurationElementUnit",
         @"_TtC20NowPlaying_ModesImpl20FloatingElementsUnit",
+        @"_TtC32ReinventFree_ReinventFreeNpvImpl43ReinventFreeNavigationBarUnitViewController",
+        @"_TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit",
+        @"_TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit",
     ]);
 }

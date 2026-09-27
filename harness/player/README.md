@@ -34,6 +34,8 @@ come late, out of order, or not at all.
   ends with `artwork checks: n of 4 right -- PASS` or `FAIL`. Before the fix it read 1 of 4.
 
 `HARNESS_VOLUME=0` leaves out the volume row that the phone has and the tree does not.
+`HARNESS_FREE=1` builds the units under the class names Spotify Free's player gives them
+(`ReinventFree_ReinventFreeNpvImpl`), around the same elements; the log should read as it does without it.
 
 A screen recording is the way to see a move:
 

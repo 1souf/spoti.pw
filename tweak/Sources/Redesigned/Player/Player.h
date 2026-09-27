@@ -20,6 +20,10 @@
 //     PlayerMenu.x       the ⋯ opening a menu the way the Music app draws one (SGRPlayerMenu.h), over
 //                        Spotify's own sheet, which it reads its rows from and keeps out of sight
 //
+// A Spotify Free account with pick and shuffle gets the player in another mode (NowPlayingReinventFreeMode),
+// whose header, information, duration, controls and footer units are classes of their own holding the
+// same elements, so each hook on one of those units hooks its Free counterpart too.
+//
 // Speed and pitch, once the redesign's own, are Shared/Player/SpeedPitch.h's; PlayerHeader.x still hands
 // the more button over, so a menu opened from it is taken for the player's.
 //

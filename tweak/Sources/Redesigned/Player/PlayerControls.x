@@ -172,10 +172,8 @@ static void playGlyph(UIView *host) {
     dispatch_once(&once, ^{ SGLog(@"redesign player: play glyph over %@ (disc %@ suppressed), spinner %@", NSStringFromClass(play.class), NSStringFromClass(disc.class), spinnerShowing(button) ? @"showing" : @"hidden"); });
 }
 
-%hook _TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit
-- (void)viewDidLayoutSubviews {
-    %orig;
-    UIView *host = ((UIViewController *)self).viewIfLoaded;
+static void layOutControls(UIViewController *unit) {
+    UIView *host = unit.viewIfLoaded;
     if (!host) return;
     // The unit lays out before its row does, and the glyphs are centred on the buttons in it.
     [SGRowIn(host) layoutIfNeeded];
@@ -183,6 +181,20 @@ static void playGlyph(UIView *host) {
     skipGlyph(host, @"SPTNowPlayingPreviousTrackButton", &kPreviousKey, @"backward.fill");
     skipGlyph(host, @"SPTNowPlayingNextTrackButton", &kNextKey, @"forward.fill");
     playGlyph(host);
+}
+
+%hook _TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutControls((UIViewController *)self);
+}
+%end
+
+// Spotify Free's player builds the same elements into units of its own (Player.h).
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutControls((UIViewController *)self);
 }
 %end
 
@@ -228,10 +240,8 @@ static UILabel *monospaced(UIView *host, NSString *identifier, const void *findK
 }
 %end
 
-%hook _TtC20NowPlaying_ModesImpl19DurationElementUnit
-- (void)viewDidLayoutSubviews {
-    %orig;
-    UIView *host = ((UIViewController *)self).viewIfLoaded;
+static void layOutTimes(UIViewController *unit) {
+    UIView *host = unit.viewIfLoaded;
     if (!host) return;
     UILabel *taken = monospaced(host, @"now-playing-time-take-label-internal", &kTakeKey);
     monospaced(host, @"now-playing-time-remaning-label-internal", &kRemainingKey);
@@ -239,6 +249,19 @@ static UILabel *monospaced(UIView *host, NSString *identifier, const void *findK
     if (!taken) return;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ SGLog(@"redesign player: monospaced times in %@ %.0fpt, features %@", taken.font.fontName, taken.font.pointSize, taken.font.fontDescriptor.fontAttributes[UIFontDescriptorFeatureSettingsAttribute]); });
+}
+
+%hook _TtC20NowPlaying_ModesImpl19DurationElementUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutTimes((UIViewController *)self);
+}
+%end
+
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutTimes((UIViewController *)self);
 }
 %end
 
@@ -250,6 +273,8 @@ static UILabel *monospaced(UIView *host, NSString *identifier, const void *findK
     SGRequireClasses(@[
         @"_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit",
         @"_TtC20NowPlaying_ModesImpl19DurationElementUnit",
+        @"_TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit",
+        @"_TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit",
         @"_TtC28EncoreConsumerMobile_BaseKit14PlayButtonView",
         @"SPTEncoreIconView",
     ]);

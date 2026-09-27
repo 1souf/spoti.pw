@@ -10,6 +10,8 @@
 //     artwork  issue #58: tracks change while the covers on screen and the picture server lag behind,
 //              checked by colour at the end of each step; the log says PASS or FAIL
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
+// HARNESS_FREE=1 builds the units under the class names Spotify Free's player (the Reinvent Free mode)
+// gives them, around the same elements.
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "Shared/Lyrics/Lyrics.h"
@@ -149,6 +151,18 @@ static NSString *colorName(UIImage *image) {
 
 @interface _TtC20NowPlaying_ModesImpl18FooterElementsUnit : UIViewController @end
 @implementation _TtC20NowPlaying_ModesImpl18FooterElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit @end
 
 @interface _TtC21NowPlaying_ScrollImpl23NPVScrollViewController : UIViewController <UIScrollViewDelegate> @end
 @implementation _TtC21NowPlaying_ScrollImpl23NPVScrollViewController
@@ -448,16 +462,23 @@ static void loadLyrics(void) {
 
     [self.window makeKeyAndVisible];
 
-    UIViewController *info = [_TtC20NowPlaying_ModesImpl23InformationElementsUnit new];
+    const char *freeEnv = getenv("HARNESS_FREE");
+    BOOL free = freeEnv && freeEnv[0] == '1';
+    UIViewController *info = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit new]
+                                  : [_TtC20NowPlaying_ModesImpl23InformationElementsUnit new];
     info.view = infoView;
-    UIViewController *duration = [_TtC20NowPlaying_ModesImpl19DurationElementUnit new];
+    UIViewController *duration = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit new]
+                                      : [_TtC20NowPlaying_ModesImpl19DurationElementUnit new];
     duration.view = durationView;
     UIViewController *floating = [_TtC20NowPlaying_ModesImpl20FloatingElementsUnit new];
     floating.view = floatingView;
-    UIViewController *footer = [_TtC20NowPlaying_ModesImpl18FooterElementsUnit new];
+    UIViewController *footer = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit new]
+                                    : [_TtC20NowPlaying_ModesImpl18FooterElementsUnit new];
     footer.view = footerView;
-    UIViewController *playback = [_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit new];
+    UIViewController *playback = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit new]
+                                      : [_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit new];
     playback.view = controls;
+    NSLog(@"[harness] units: %@, %@, %@, %@", info.class, duration.class, playback.class, footer.class);
     UIViewController *player = [_TtC19NowPlaying_ViewImpl24NowPlayingViewController new];
     player.view = host;
     _units = @[info, duration, floating, playback, footer, scrollUnit, background, player];

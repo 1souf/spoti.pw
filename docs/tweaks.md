@@ -193,7 +193,9 @@ Redesigned:
                   the Mac against harness/tabbar/
     NowPlayingBar/ the glass now playing bar (NowPlayingBar.x), with Spotify's device button on it hidden on request
                   (BarConnect.x, its own key and its own Now playing page, apart from the native look's)
-    Player/       the redesigned full screen player (Player.h lists its files); its ⋯ opens a menu the way the
+    Player/       the redesigned full screen player (Player.h lists its files), on Spotify Free's units too (a Free
+                  account with pick and shuffle gets NowPlayingReinventFreeMode, whose units are classes of their own
+                  around the same elements, and each unit hook covers both); its ⋯ opens a menu the way the
                   Music app draws one (PlayerMenu.x, SGRPlayerMenu.m): a pane of glass grown out of the button,
                   Add to playlist, Add to Queue and Share as three tiles across its top, groups of rows under
                   them, Speed and pitch opening onto Shared/Player's sliders in place, everything else Spotify
