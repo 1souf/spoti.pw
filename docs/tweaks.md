@@ -197,7 +197,7 @@ Redesigned:
                   Offline or Private Session under the bar), so the now playing bar and the pages move up with it. Laid out on
                   the Mac against harness/tabbar/
     NowPlayingBar/ the glass now playing bar (NowPlayingBar.x), with Spotify's device button on it hidden on request
-                  (BarConnect.x, its own key and its own Now playing page, apart from the native look's)
+                  (BarConnect.x, its own key and its own row on the Player page, apart from the native look's)
     Player/       the redesigned full screen player (Player.h lists its files), on Spotify Free's units too (a Free
                   account with pick and shuffle gets NowPlayingReinventFreeMode, whose units are classes of their own
                   around the same elements, and each unit hook covers both); its ⋯ opens a menu the way the
@@ -339,7 +339,7 @@ Player: Gestures, Blocked artists (with the count on the row) and Lock screen wi
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player
-buttons to hide); in the redesign instead Now playing (its device button and the Background behind the player: Still artwork,
+buttons to hide); in the redesign instead, right on the Player page, its device button and the Background behind the player (Still artwork,
 Colour flow or Fluid artwork, the default, the cover itself Kawase blurred and warped on Metal, ported from kawarp
 (Redesigned/Kit/SGRWarp.m); its page has a live preview over Speed, Warp, Blur, Saturation and Brightness, which the
 player follows as they move, and Reset; laid out against harness/kawarp/, the player's side against harness/player/). Then Vibrations under either look, a card for

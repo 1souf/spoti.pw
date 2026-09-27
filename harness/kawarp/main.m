@@ -1,4 +1,4 @@
-// The redesign's Now playing page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m) and the Fluid artwork page
+// The redesign's rows on the Player page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m) and the Fluid artwork page
 // it opens (Redesigned/Player/PlayerBackgroundSettings.m), with the preview drawn by the Kit's renderer. The
 // launch line sets things up and then plays actions, one every 1.2 s from 1 s in; screenshot between them.
 //
@@ -44,7 +44,8 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
 
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    self.nav = [[UINavigationController alloc] initWithRootViewController:SGRNowPlayingBarSettingsPage()];
+    UIViewController *page = [[SGModPage alloc] initWithTitle:@"Player" intro:SGRestartNote sections:SGRNowPlayingSections() footer:nil];
+    self.nav = [[UINavigationController alloc] initWithRootViewController:page];
     self.window.rootViewController = self.nav;
     [self.window makeKeyAndVisible];
 

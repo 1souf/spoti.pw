@@ -1,6 +1,6 @@
 # Fluid artwork settings harness
 
-The redesign's Now playing page (`Redesigned/NowPlayingBar/NowPlayingBarSettings.m`) and the Fluid artwork page
+The redesign's rows on the Player page (`Redesigned/NowPlayingBar/NowPlayingBarSettings.m`) and the Fluid artwork page
 it opens (`Redesigned/Player/PlayerBackgroundSettings.m`), on the real `Settings/` framework, with the preview
 drawn by the Kit's renderer (`Redesigned/Kit/SGRWarp.m`). The player's side is `harness/player`'s `fluid`
 scenario.

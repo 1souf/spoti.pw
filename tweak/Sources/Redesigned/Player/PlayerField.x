@@ -8,7 +8,7 @@
 // The field goes on top of the plane's own subviews, so Spotify's gradients are covered rather than
 // fought over, and nothing depends on a repaint hook.
 //
-// The Now playing page's Background (SGRPlayerBackgroundStyle) makes the field the still blurred artwork,
+// The Player page's Background (SGRPlayerBackgroundStyle) makes the field the still blurred artwork,
 // the Kit's drifting colours (SGRFlow.h) or the artwork warped (SGRWarp.h); a paused song holds it still.
 //
 // The picture comes from the Kit's now playing artwork, keyed on the picture the playing track names

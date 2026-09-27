@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the Fluid artwork settings harness for the simulator: the redesign's Now playing page and the
+# Builds the Fluid artwork settings harness for the simulator: the redesign's Player page rows and the
 # Fluid artwork page with its preview, on the real Settings/ framework and the Kit's renderer.
 set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)

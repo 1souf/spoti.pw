@@ -1,4 +1,4 @@
-// The player's background on the Now playing page: which of the three moves behind the player, and the
+// The player's background on Mod Settings' Player page: which of the three moves behind the player, and the
 // Fluid artwork page, its sliders under a preview drawn by the same renderer as the player's field.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"

@@ -37,7 +37,7 @@
 
 #pragma mark - the background (PlayerBackgroundSettings.m)
 
-// What moves behind the player, picked on the Now playing page (Redesigned/NowPlayingBar/
+// What moves behind the player, picked on Mod Settings' Player page (Redesigned/NowPlayingBar/
 // NowPlayingBarSettings.m), stored as the index. It replaced the Moving background switch, whose off
 // is carried over as Still artwork.
 #define SGRKeyPlayerBackground @"spotifyglass.redesign.player.background"
@@ -57,7 +57,7 @@ SGRPlayerBackground SGRPlayerBackgroundStyle(void);
 SGRWarpLook SGRPlayerFluidLook(void);
 // Posted as a slider moves or the page resets them, so the player's field and the preview follow at once.
 extern NSNotificationName const SGRPlayerFluidLookDidChangeNotification;
-// The rows of the Now playing page for the background, and the Fluid artwork page they open.
+// The Player page's rows for the background, and the Fluid artwork page they open.
 NSArray<SGModRow *> *SGRPlayerBackgroundRows(void);
 
 #pragma mark - the ⋯ menu (PlayerMenu.x)
