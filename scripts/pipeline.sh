@@ -127,6 +127,10 @@ else
   echo "    no WidgetExtension.appex in this IPA"
 fi
 
+echo "==> adding the alternate app icons"
+# A failure leaves the IPA as it was, without them; Mod > App icon then does not show.
+"$ROOT/scripts/app-icons.sh" "$OUT" || echo "    the app icons failed: building without them"
+
 if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"
   "$ROOT/scripts/merge-appintents.py" "$OUT" "$APP_DIR" "$EXT_DIR/app/Metadata.appintents"

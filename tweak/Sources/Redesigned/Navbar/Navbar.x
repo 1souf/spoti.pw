@@ -327,6 +327,17 @@ void SGRRefreshTabBar(void) {
 void SGRLogTabBarRow(UIView *tabBar) {
     UIStackView *stack = SGRowIn(tabBar);
     if (!stack) return;
+    // It runs on every pass of the bar, so the description is only built when the frames moved.
+    NSMutableData *frames = [NSMutableData data];
+    CGRect own[] = {tabBar.frame, stack.frame};
+    [frames appendBytes:own length:sizeof(own)];
+    for (UIView *item in stack.arrangedSubviews) {
+        CGRect frame = item.hidden ? CGRectNull : item.frame;
+        [frames appendBytes:&frame length:sizeof(frame)];
+    }
+    static NSData *lastFrames;
+    if ([frames isEqualToData:lastFrames]) return;
+    lastFrames = frames;
     NSMutableString *out = [NSMutableString stringWithFormat:@"row in %@ %@, icon %@ label %@, stack %@ axis %ld dist %ld align %ld spacing %.1f autolayout %d",
                             NSStringFromClass(tabBar.class), NSStringFromCGRect(tabBar.frame),
                             NSStringFromCGRect(sg_iconBox), NSStringFromCGRect(sg_labelBox), NSStringFromCGRect(stack.frame),
