@@ -111,9 +111,12 @@ Shared:
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
     ConnectDiscovery/  Bonjour resolves local Spotify Connect receivers. When Spotify's own mDNS send
-                  fails without the multicast entitlement, its query is sent by IPv4 unicast to those
-                  receivers and each reply is delivered to Spotify's socket. The IPA declares Connect
-                  and Google Cast Bonjour service types; pipeline.sh keeps the IPA's existing types.
+                  fails without the multicast entitlement, a bounded round sends its query by IPv4/IPv6
+                  unicast to all resolved receivers and replays validated replies to Spotify's socket.
+                  A short wait also catches receivers still resolving. Connected sockets are left alone.
+                  The IPA declares Connect and Google Cast Bonjour service types; pipeline.sh keeps the
+                  IPA's existing types. This bridge handles Connect only; Cast is Bonjour-declared but
+                  has no equivalent packet bridge here.
     Player/       the player's open and close announced (PlayerEvents.x), what the player is doing read through
                   one hook for every feature that wants it (PlayerState.x), the lock screen widget's flags, and in the
                   more button's menu Speed and pitch: both done to Spotify's audio by Apple's time and pitch unit, put
