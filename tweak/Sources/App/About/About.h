@@ -59,6 +59,14 @@ SGModRow *SGSigningWarningRow(void);          // nil while the signature is soun
 void SGCheckSigningOnce(void);
 void SGShowSigningFixIfPending(void);   // the sheet the tour held back, if any
 
+// Certificate.m: how this copy is signed, from the provisioning profile inside the app, and for a free
+// Apple ID's 7-day signature a sheet now and then offering a certificate, worded by spoti.pw.
+NSString *SGCertificateKind(void);   // "free", "paid", "enterprise", "none" (no profile), nil if unreadable
+NSDate *SGCertificateExpiry(void);
+SGModRow *SGCertificateRow(void);    // nil unless signed with a free Apple ID
+void SGWatchForCertificate(void);
+BOOL SGCertificateOfferShown(void);  // this run, so the donate sheet stays out of its way
+
 // Backup.m: the settings out to a JSON file through the share sheet, and back in from one, replacing
 // what is set and restarting.
 void SGExportSettings(void);
