@@ -203,6 +203,43 @@ SGModRow *SGLinkRow(NSString *title, NSString *subtitle, NSString *url) {
     return SGActionRow(title, subtitle, ^{ SGOpenURL(url); });
 }
 
+static void sayProblem(NSString *title, NSString *problem) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:problem preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+
+SGModRow *SGTextRow(NSString *title, NSString *prompt, NSString *placeholder, NSString *(^value)(void),
+                    NSString *(^set)(NSString *text)) {
+    return SGStatActionRow(title, nil, value, ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:prompt preferredStyle:UIAlertControllerStyleAlert];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+            field.placeholder = placeholder;
+            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+            field.autocorrectionType = UITextAutocorrectionTypeNo;
+            field.spellCheckingType = UITextSpellCheckingTypeNo;
+            field.smartDashesType = UITextSmartDashesTypeNo;
+            field.smartQuotesType = UITextSmartQuotesTypeNo;
+            field.clearButtonMode = UITextFieldViewModeWhileEditing;
+        }];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        if (value()) {
+            [alert addAction:[UIAlertAction actionWithTitle:@"Remove" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+                set(@"");
+            }]];
+        }
+        UIAlertAction *save = [UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            NSString *text = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (!text.length) return;
+            NSString *problem = set(text);
+            if (problem) sayProblem(title, problem);
+        }];
+        [alert addAction:save];
+        alert.preferredAction = save;
+        [SGTopController() presentViewController:alert animated:YES completion:nil];
+    });
+}
+
 // A value on the right and a tap: the Updates row reads its status out of About/Update.m every tick,
 // and a tap asks the site again instead of waiting for the six hour cache to lapse.
 SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void)) {
@@ -248,6 +285,41 @@ static UIView *valueAndChevron(NSString *text) {
     [box addSubview:label];
     [box addSubview:chevron];
     return box;
+}
+
+void SGFillRowCell(UITableViewCell *cell, SGModRow *row) {
+    SGFillCell(cell, row.title, row.subtitle, row.color, row.symbol);
+    UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+    if (row.color) content.secondaryTextProperties.color = row.color;
+    BOOL tile = row.symbol && !row.color;
+    if (tile) content.image = SGTileImage(row.symbol);
+    cell.contentConfiguration = content;
+    cell.separatorInset = UIEdgeInsetsMake(0, row.symbol ? (tile ? 58 : 48) : 16, 0, 0);
+    if (row.key) return;
+    if (row.page) {
+        cell.accessoryView = row.value ? valueAndChevron(row.value()) : SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    } else if (row.value) {
+        UILabel *label = [UILabel new];
+        label.font = SGTitleFont();
+        label.textColor = SGGrey();
+        label.text = row.value();
+        [label sizeToFit];
+        cell.accessoryView = label;
+        cell.selectionStyle = row.action ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    } else if (row.action) {
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    }
+}
+
+UIView *SGSectionFooterFor(UITableView *table, SGModSection *section) {
+    if (!section.footer) return nil;
+    return section.footerLink ? SGLinkedSectionFooter(table, section.footer, section.footerLink) : SGSectionFooter(table, section.footer);
+}
+
+CGFloat SGSectionFooterHeightFor(UITableView *table, SGModSection *section) {
+    if (!section.footer) return CGFLOAT_MIN;
+    return SGSectionFooterHeight(table, section.footerLink ? SGLinkedFooterText(section.footer, section.footerLink) : section.footer);
 }
 
 // On means the row's own override is in place; anything else, including the opposite override
@@ -606,13 +678,11 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
 }
 
 - (UIView *)tableView:(UITableView *)table viewForFooterInSection:(NSInteger)section {
-    NSString *footer = _sections[(NSUInteger)section].footer;
-    return footer ? SGSectionFooter(table, footer) : nil;
+    return SGSectionFooterFor(table, _sections[(NSUInteger)section]);
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
-    NSString *footer = _sections[(NSUInteger)section].footer;
-    return footer ? SGSectionFooterHeight(table, footer) : CGFLOAT_MIN;
+    return SGSectionFooterHeightFor(table, _sections[(NSUInteger)section]);
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
@@ -624,13 +694,7 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
         return cell;
     }
     UITableViewCell *cell = SGDequeueCell(table, @"row");
-    SGFillCell(cell, row.title, row.subtitle, row.color, row.symbol);
-    UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
-    if (row.color) content.secondaryTextProperties.color = row.color;
-    BOOL tile = row.symbol && !row.color;
-    if (tile) content.image = SGTileImage(row.symbol);
-    cell.contentConfiguration = content;
-    cell.separatorInset = UIEdgeInsetsMake(0, row.symbol ? (tile ? 58 : 48) : 16, 0, 0);
+    SGFillRowCell(cell, row);
     showProgress(cell, row, NO);
 
     if (row.key) {
@@ -658,19 +722,6 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
         [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = row.info ? [self infoButtonBeside:toggle] : toggle;
         cell.selectionStyle = locked ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    } else if (row.page) {
-        cell.accessoryView = row.value ? valueAndChevron(row.value()) : SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
-        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    } else if (row.value) {
-        UILabel *label = [UILabel new];
-        label.font = SGTitleFont();
-        label.textColor = SGGrey();
-        label.text = row.value();
-        [label sizeToFit];
-        cell.accessoryView = label;
-        cell.selectionStyle = row.action ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    } else if (row.action) {
-        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     }
     return cell;
 }

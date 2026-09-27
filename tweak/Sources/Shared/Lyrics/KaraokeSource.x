@@ -178,7 +178,7 @@ static void requestFromSpotify(NSString *trackID, BOOL retry) {
             NSArray<SGKaraokeLine *> *kept = sg_lyrics[trackID];
             if (kept && SGKaraokeLinesTiming(kept) <= SGKaraokeLinesTiming(lines)) return;
             keep(trackID, lines);
-            SGLyricsSetCredit(trackID, @"Spotify");
+            SGLyricsSetCredit(trackID, SGLyricsCreditNamed(@"Spotify"));
         });
     }] resume];
 }
@@ -202,7 +202,7 @@ void SGKaraokeRequestLyrics(NSString *trackID) {
         [sg_asking removeObject:trackID];
         if (lyrics.karaokeLines) {
             keep(trackID, lyrics.karaokeLines);   // on the main queue, where the fetch answers
-            SGLyricsSetCredit(trackID, lyrics.provider);
+            SGLyricsSetCredit(trackID, lyrics.credit);
             // Plain text is shown while Spotify is asked whether it has the song timed.
             if (SGKaraokeLinesTiming(lyrics.karaokeLines) != SGKaraokeTimingNone) return;
         }

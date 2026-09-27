@@ -50,6 +50,7 @@
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSArray<SGModRow *> *rows;
 @property (nonatomic, copy) NSString *footer;
+@property (nonatomic, copy) NSString *footerLink;   // an address the footer ends with and opens when tapped
 @end
 
 @interface SGModPage : SGPage
@@ -81,8 +82,18 @@ SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArra
 SGModRow *SGSliderRow(NSString *title, NSString *subtitle, double minimum, double maximum, double step,
                       double (^get)(void), void (^set)(double value), NSString *(^format)(double value));
 SGModRow *SGLinkRow(NSString *title, NSString *subtitle, NSString *url);
+// A text typed into an alert, `prompt` over the field and `placeholder` in it: the row reads `value`
+// out, Save hands `set` what was typed and Remove an empty string. `set` answers what is wrong with the
+// text, which is said, or nil once it is stored. The field starts empty: what is stored may be private.
+SGModRow *SGTextRow(NSString *title, NSString *prompt, NSString *placeholder, NSString *(^value)(void),
+                    NSString *(^set)(NSString *text));
 SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void));
 SGModSection *SGSection(NSString *title, NSArray<SGModRow *> *rows);
 SGModSection *SGNotedSection(NSString *title, NSArray<SGModRow *> *rows, NSString *footer);
 // Gives a row its leading symbol, drawn on a tile unless the row has a colour of its own.
 SGModRow *SGWithSymbol(SGModRow *row, NSString *symbol);
+// A row as the page draws it, but for the switch a row with a key gets from the page, for other lists
+// that carry rows of this kind (Settings/SGOrderPage).
+void SGFillRowCell(UITableViewCell *cell, SGModRow *row);
+UIView *SGSectionFooterFor(UITableView *table, SGModSection *section);
+CGFloat SGSectionFooterHeightFor(UITableView *table, SGModSection *section);

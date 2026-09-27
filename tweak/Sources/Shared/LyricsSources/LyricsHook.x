@@ -137,7 +137,8 @@ static NSData *pageBody(SGLyricsResult *chain, NSData *colours) {
                                        SGPBString(2, [text isKindOfClass:NSString.class] ? text : @"")]);
         [lyrics addObject:SGPBBytes(2, line)];
     }];
-    [lyrics addObject:SGPBString(5, chain.provider.length ? chain.provider : kUnnamedProvider)];
+    NSString *credit = chain.pageCredit.text.length ? chain.pageCredit.text : chain.provider;
+    [lyrics addObject:SGPBString(5, credit.length ? credit : kUnnamedProvider)];
     return SGPBSerialize(@[SGPBBytes(1, SGPBSerialize(lyrics)), SGPBBytes(2, colours ?: defaultColours())]);
 }
 
@@ -159,15 +160,16 @@ static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBod
     NSData *page = replace ? pageBody(chain, colours) : nil;
 
     NSArray<SGKaraokeLine *> *viewLines = nil;
-    NSString *credit = chain.provider;
+    SGLyricsCredit *credit = chain.credit;
     if (chain.karaokeLines.count && (!spotifyLines || SGKaraokeLinesTiming(chain.karaokeLines) <= spotifyTiming)) {
         viewLines = chain.karaokeLines;
     } else if (spotifyLines) {
         viewLines = spotifyLines;
-        credit = @"Spotify";
+        credit = SGLyricsCreditNamed(@"Spotify");
     }
     if (viewLines) SGKaraokeKeepLines(track, viewLines);
     SGLyricsSetCredit(track, credit);
+    SGLyricsSetPageCredit(track, page ? chain.pageCredit : nil);
     // Spotify's JSON may have the song timed where its page does not.
     if (!donor && spotifyBody.length && SGKaraokeLinesTiming(viewLines) == SGKaraokeTimingNone) SGKaraokeAskSpotifyForTiming(track);
 

@@ -83,7 +83,10 @@ Shared:
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
                   BiniLyrics.m and Unison.m, read by SGTTML.m, which carries a second voice and the
                   backing vocals, and in its head Apple's translation and its pronunciation of a line, the pronunciation
-                  timed word by word (the translation taken in the Lyrics page's language); Musixmatch.m, matched by
+                  timed word by word (the translation taken in the Lyrics page's language); SpicyLyrics.m, the Spicy
+                  Lyrics developer platform's GET /v1/lyrics/{id}, matched by Spotify's track id and asked with a
+                  publishable key of the user's own (see Spicy Lyrics below), carrying syllables, backing vocals, a
+                  duet's sides and the credit its terms require; Musixmatch.m, matched by
                   Spotify's track id with an anonymous token, word timed where it has richsync; NetEase.m, word timing from yrc for what the others only line time; LrcLib.m, open and
                   keyless and timed by the line, the floor under the rest. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
@@ -279,6 +282,29 @@ A hook reads its switch when it runs (`SGEnabled`, `SGHidden`, `SGFlag` from Cor
 change shows after Spotify restarts; the tab editor on the Navbar page is the exception and applies as soon as the bar lays
 out again, as are the Home gradient's colour, strength and height, but not the switch that turns it on, and Vibrations
 and Live Activity. The root page in `App/ModSettings.x` holds the Appearance card and links the page of each part of Spotify, and only the stored look's.
+
+## Spicy Lyrics
+
+Spicy Lyrics answers only a key, and its terms want every deployer to have their own, so each user
+makes one (16 or older, free):
+
+1. Sign up at developers.spicylyrics.org (email, password, the emailed code).
+2. Dashboard, Applications: create an application. Ignore its secret key (`sl_sk_`), which must stay on
+   a server.
+3. Turn on client access for it and add **No origin header** to the allowed origins (it asks for a
+   confirmation). Copy the publishable key, `sl_pk_…`.
+4. Mod Settings, Lyrics, Sources: Spicy Lyrics key, paste, Save; tap Spicy Lyrics to put it in the order.
+
+The key is stored under `spotipw.spicylyrics.key`, outside the `spotifyglass.` prefix, so no settings
+backup, diagnostics dump or reset carries it; only an `sl_pk_` key is taken. A 401 or 403 is shown on
+the Sources page ("Key rejected: …", from the error code) and the key is not asked with again for ten
+minutes or until it changes; a 429 or 503 is waited out for its Retry-After (or RateLimit-Reset), and
+the last request of a window waits out the rest of it. Answers are kept in memory per track only (the
+terms allow 30 days). The credit is required: "Apple Music via Spicy Lyrics", "Spotify via Spicy
+Lyrics", or for a community sync "Spicy Lyrics, uploaded by …, made by …" with both linked. The
+redesign's lyrics show it whatever Show source says, a tap opening the links; the native look puts it
+in Spotify's own "Lyrics provided by" line under the lyrics (LyricsHook.x), which
+Native/Lyrics/LyricsCredit.x makes tappable. Tested on the Mac against harness/spicylyrics/.
 
 ## Make targets
 

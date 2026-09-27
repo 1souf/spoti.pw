@@ -4,6 +4,7 @@
 // is a mock the harness drives: SGRHarnessSetTrack reports a track change to every observer.
 #import <UIKit/UIKit.h>
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsSources/LyricsSources.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Player/PlayerState.h"
 
@@ -81,7 +82,15 @@ void SGPrepareFeedback(NSInteger feedback) {}
 
 #pragma mark - Shared/LyricsSources, Shared/LyricsMeanings, Redesigned/Lyrics/MeaningSheet.m
 
-NSString *SGLyricsCreditFor(NSString *trackID) { return @"the harness"; }
+@implementation SGLyricsCredit
+@end
+SGLyricsCredit *SGLyricsCreditFor(NSString *trackID) {
+    SGLyricsCredit *credit = [SGLyricsCredit new];
+    credit.text = @"the harness";
+    return credit;
+}
+void SGLyricsOpenCredit(SGLyricsCredit *credit) {}
+BOOL SGLyricsActive(void) { return NO; }
 void SGLyricsMeaningsFor(NSString *trackID, NSArray *lines, void (^done)(NSDictionary *byLine)) {}
 void SGRShowMeanings(NSString *lineText, NSArray *meanings) {}
 
