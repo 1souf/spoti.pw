@@ -346,8 +346,9 @@ the bar shows them: drag to reorder, tap to hide or show, and Add a tab opens a 
 of Spotify's or any `spotify:` link on the bar under a name of your own, with one of Encore's own glyphs
 or an SF Symbol (the names come from `Core/SGSFSymbolCatalog.m`, MIT, on the Licenses page). Spotify's own tabs are kept by the
 name under their icon, so they can be hidden but never removed, and switching the app's language
-starts the order over. A tab of the mod's own opens its link through Spotify's link dispatcher, so it
-never lights up as the tab you are on. Hide labels, on the same page, leaves the glass bar with its
+starts the order over. A tab of the mod's own opens its link through Spotify's link dispatcher, onto
+the stack of the tab you are on. The redesign's glass bar lights it while that page is on the stack and
+a second tap goes back to it; the native bar leaves the tab you were on lit. Hide labels, on the same page, leaves the glass bar with its
 icons alone and applies straight away too.
 
 ## Adding a feature

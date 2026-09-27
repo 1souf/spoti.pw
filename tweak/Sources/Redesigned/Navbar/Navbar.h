@@ -28,6 +28,10 @@ void SGRComposeTabBar(UIView *tabBar);
 void SGRLogTabBarRow(UIView *tabBar);
 // Lays the bar out again after the Navbar page changes something, so it does not wait for a touch.
 void SGRRefreshTabBar(void);
+// The item of a tab of the mod's own whose page is on the stack on screen, which the glass bar lights
+// in place of Spotify's tab; nil once the page is popped or SGRTabPicked is told of one of Spotify's.
+UIView *SGRCurrentModTab(void);
+void SGRTabPicked(UIView *item);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings
 UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone, for the welcome tour

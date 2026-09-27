@@ -5,8 +5,9 @@
 // bar is taller than Spotify's, Spotify is made to leave it the room (see "room for the glass bar").
 //
 // A tab picked on the system bar is passed on as a tap on the hidden Spotify item it mirrors, and the
-// system bar's selection follows whichever Spotify label is painted white. Navbar.x composes the
-// hidden row, so its order, hidden tabs and tabs of the mod's own carry over. Always on in the redesign.
+// system bar's selection follows whichever Spotify label is painted white, or a tab of the mod's own
+// while the page it opened is on the stack. Navbar.x composes the hidden row, so its order, hidden tabs
+// and tabs of the mod's own carry over. Always on in the redesign.
 //
 // Tree (trees/home.txt): NavigationUI_TabBarImpl.TabBarView > TabBarCompactView > UIStackView of
 //   ElementContentView<TabBarItemElement>, each with an SPTEncoreIconView and an SPTEncoreLabel.
@@ -184,6 +185,7 @@ static void forwardTap(UIView *item) {
 - (void)tabBar:(UITabBar *)tabBar didSelectItem:(UITabBarItem *)item {
     NSUInteger index = [self.items indexOfObject:item];
     if (index == NSNotFound || index >= self.sources.count) return;
+    SGRTabPicked(self.sources[index]);
     // Home tapped while on Home pops Spotify's stack, which would take Mod Settings straight off it.
     if (!self.holding) forwardTap(self.sources[index]);
     // Spotify repaints its labels a moment later; a tap it did not take snaps the selection back.
@@ -426,6 +428,8 @@ static void syncBar(UIView *stockBar) {
     }
 
     UITabBarItem *selected = nil;
+    UIView *current = SGRCurrentModTab();
+    NSUInteger modTab = current ? [sources indexOfObject:current] : NSNotFound;
     BOOL missing = NO;
     for (NSUInteger i = 0; i < sources.count; i++) {
         UITabBarItem *item = bar.items[i];
@@ -434,7 +438,7 @@ static void syncBar(UIView *stockBar) {
         missing |= !item.image || !item.selectedImage;
         NSString *title = hideLabels ? nil : labelIn(sources[i]).text;
         if (hideLabels ? item.title != nil : title.length && ![title isEqualToString:item.title]) item.title = title;
-        if (!selected && isActive(sources[i])) selected = item;
+        if (!selected && (modTab != NSNotFound ? i == modTab : isActive(sources[i]))) selected = item;
     }
     if (selected && bar.selectedItem != selected) bar.selectedItem = selected;
     // An icon view Spotify has not built yet is looked for again shortly, not on the next touch.
@@ -513,6 +517,15 @@ static void itemDidLayOut(UIView *item) {
 }
 %end
 
+// A page pushed or popped decides whether a tab of the mod's own is the one lit.
+%hook SPNavigationController
+- (void)navigationController:(UINavigationController *)controller didShowViewController:(UIViewController *)page animated:(BOOL)animated {
+    %orig;
+    UIView *bar = sg_stockBar;
+    if (bar) syncBar(bar);
+}
+%end
+
 // A tab changed from elsewhere (a link, the side drawer) repaints the labels without a layout pass.
 %hook _TtC23NavigationUI_TabBarImpl19TabBarContainerImpl
 - (void)setSelectedViewController:(UIViewController *)controller {
@@ -538,5 +551,6 @@ static void itemDidLayOut(UIView *item) {
         @"_TtC23NavigationUI_TabBarImpl21TabBarItemElementView",
         @"_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView",
         @"_TtC23NavigationUI_TabBarImpl19TabBarContainerImpl",
+        @"SPNavigationController",
     ]);
 }

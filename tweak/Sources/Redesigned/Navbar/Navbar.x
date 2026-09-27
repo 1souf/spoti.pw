@@ -80,6 +80,22 @@ static UIView *iconView(NSString *name) {
 - (void)applyEntry:(NSDictionary *)entry;
 @end
 
+// A tab of the mod's own pushes its page onto the stack of the tab Spotify is on, so the glass bar is
+// told which one to light for as long as that page stays on the stack Spotify shows.
+static __weak SGRTabItemView *sg_opening;
+static CFTimeInterval sg_openedAt;
+static __weak SGRTabItemView *sg_currentItem;
+static __weak UIViewController *sg_currentPage;
+
+UIView *SGRCurrentModTab(void) {
+    UIViewController *page = sg_currentPage;
+    return page.navigationController.viewIfLoaded.window ? sg_currentItem : nil;
+}
+
+void SGRTabPicked(UIView *item) {
+    if (![item isKindOfClass:SGRTabItemView.class]) sg_currentPage = nil;
+}
+
 @implementation SGRTabItemView {
     NSString *_iconName;
     UIView *_icon;
@@ -137,6 +153,14 @@ static UIView *iconView(NSString *name) {
 // Through the app's own link dispatcher (Shared/Navigation/Links.h). What the dispatcher makes of the
 // URI goes to the log first, so a tab that ends in Spotify's "Couldn't open link" says why.
 - (void)open {
+    // Tapped again while its page is on the stack, it goes back to that page as a tab of Spotify's would.
+    UIViewController *page = sg_currentPage;
+    if (SGRCurrentModTab() == self) {
+        [page.navigationController popToViewController:page animated:YES];
+        return;
+    }
+    sg_opening = self;
+    sg_openedAt = CACurrentMediaTime();
     NSURL *url = SGRNavbarTabURL(self.uri);
     NSString *via = nil;
     SGLinkRoute route = SGSpotifyURIRoute(url, &via);
@@ -370,6 +394,19 @@ void SGRLogTabBarRow(UIView *tabBar) {
     SGLogLong(@"navbar", out);
 }
 
+// The dispatcher pushes the page a tab of the mod's own opens straight from the tap, well inside a second.
+%hook SPNavigationController
+- (void)pushViewController:(UIViewController *)page animated:(BOOL)animated {
+    SGRTabItemView *item = sg_opening;
+    sg_opening = nil;
+    if (item && CACurrentMediaTime() - sg_openedAt < 1) {
+        sg_currentItem = item;
+        sg_currentPage = page;
+    }
+    %orig;
+}
+%end
+
 // Whether Spotify reads its own item list through this ObjC bridge decides whether the bar can be
 // composed at the model level, where the order, the taps and the widths would all follow by
 // themselves, instead of by moving views about. Silence in the log says it cannot.
@@ -394,6 +431,7 @@ void SGRLogTabBarRow(UIView *tabBar) {
         @"SPTEncoreIcon",
         @"SPTEncoreIconView",
         @"SPTEncoreLabel",
+        @"SPNavigationController",
         @"_TtC28NavigationUI_TabBarItemsImpl29TabBarItemsNavigationListImpl",
     ]);
 }
