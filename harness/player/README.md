@@ -15,7 +15,7 @@ sources, for example an older commit, to see a bug before its fix.
 
 `build.sh` runs `logos.pl -c generator=internal` over `PlayerLyrics.x`, `PlayerArtwork.x`,
 `PlayerFooter.x`, `PlayerControls.x`, `PlayerScroll.x`, `PlayerField.x` and the Kit's `SGRBridges.x`, and links them with
-the real `Core/`, `Redesigned/Kit/` and `SGRKaraokeView`. `stubs.m` stands in for the hooks the harness
+the real `Core/`, `Settings/`, `Redesigned/Kit/`, `PlayerBackgroundSettings.m` and `SGRKaraokeView`. `stubs.m` stands in for the hooks the harness
 does not compile (the Kit's accent and repaint, the rest of the player, the lyrics store, the haptics)
 and plays a mock player: `SGRHarnessSetTrack` reports a track, with the image ids Spotify's metadata
 carries, to every state observer. A song of ten timed lines plays on from launch. `main.m` also answers
@@ -41,6 +41,14 @@ come late, out of order, or not at all.
   `tap checks: n of 25 right -- PASS` or `FAIL`. The iOS 26 UISlider lets go of a touch only once its
   thumb has settled, and a tap is delivered to the views late through the list's delayed touches, as
   on the phone.
+- `fluid` is the Fluid artwork background: another album at 7 s (the crossfade), paused from 11 to 13 s, the
+  player's open or close announced at 15 s, Speed, Saturation and Blur pushed at 17 s and put back at 20 s,
+  as the page's sliders do. The log's `redesign warp:` lines pair the link's runs and stops with each step
+  and give its cost a frame.
+
+`HARNESS_BACKGROUND=0|1|2` stores Still artwork, Colour flow or Fluid artwork (unset is the default), and
+`HARNESS_OLD_MOTION=0` the Moving background switch it replaced, off. `HARNESS_COVER=<path>` starts on a
+picture of your own; keep real covers out of the repo.
 
 `HARNESS_VOLUME=0` leaves out the volume row that the phone has and the tree does not.
 `HARNESS_FREE=1` builds the units under the class names Spotify Free's player gives them

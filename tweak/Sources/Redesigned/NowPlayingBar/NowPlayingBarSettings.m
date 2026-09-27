@@ -1,5 +1,5 @@
-// The Now playing page of the redesign, under Player (App/Pages.m puts it there): the bar and the
-// player behind it.
+// The Now playing page of the redesign, under Player (App/Pages.m puts it there): the bar and what
+// moves behind the player.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "NowPlayingBar.h"
@@ -10,8 +10,6 @@ UIViewController *SGRNowPlayingBarSettingsPage(void) {
         SGSection(nil, @[
             SGHideRow(@"Hide the device button", nil, SGRHideBarConnect),
         ]),
-        SGSection(nil, @[
-            SGSwitchRow(@"Moving background", nil, SGRKeyPlayerMotion),
-        ]),
+        SGSection(nil, SGRPlayerBackgroundRows()),
     ] footer:nil];
 }

@@ -7,6 +7,7 @@
 // have it to themselves while they play untouched, until a touch brings the controls back.
 //
 //     PlayerField.x      the switch's flags and rows, the field in the background plane, the cover it reads
+//     PlayerBackgroundSettings.m  what moves behind the player, Fluid artwork's sliders and their page
 //     PlayerArtwork.x    the cover's corners, shadow and paused shrink, the lyric preview under it hidden
 //     PlayerHeader.x     glass behind the close and more buttons
 //     PlayerControls.x   previous, play and next as bare glyphs, monospaced times
@@ -30,12 +31,35 @@
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
+#import "Redesigned/Kit/SGRWarp.h"
 
-@class SGRArtworkField;
+@class SGRArtworkField, SGModRow;
 
-// The artwork's colours moving behind the player (on until switched off), or the blurred artwork held
-// still; the row is on the Now playing page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m).
-#define SGRKeyPlayerMotion @"spotifyglass.redesign.player.movingBackground"
+#pragma mark - the background (PlayerBackgroundSettings.m)
+
+// What moves behind the player, picked on the Now playing page (Redesigned/NowPlayingBar/
+// NowPlayingBarSettings.m), stored as the index. It replaced the Moving background switch, whose off
+// is carried over as Still artwork.
+#define SGRKeyPlayerBackground @"spotifyglass.redesign.player.background"
+#define SGRKeyPlayerMotionWas @"spotifyglass.redesign.player.movingBackground"
+typedef NS_ENUM(NSInteger, SGRPlayerBackground) {
+    SGRPlayerBackgroundStill,   // the blurred artwork held still
+    SGRPlayerBackgroundFlow,    // the artwork's colours drifting (SGRFlow.h)
+    SGRPlayerBackgroundFluid,   // the artwork itself warped (SGRWarp.h)
+};
+SGRPlayerBackground SGRPlayerBackgroundStyle(void);
+// Fluid artwork's sliders, whole numbers: speed, warp, saturation and brightness in percent, blur in passes.
+#define SGRKeyFluidSpeed @"spotifyglass.redesign.player.fluid.speed"
+#define SGRKeyFluidWarp @"spotifyglass.redesign.player.fluid.warp"
+#define SGRKeyFluidBlur @"spotifyglass.redesign.player.fluid.blur"
+#define SGRKeyFluidSaturation @"spotifyglass.redesign.player.fluid.saturation"
+#define SGRKeyFluidBrightness @"spotifyglass.redesign.player.fluid.brightness"
+SGRWarpLook SGRPlayerFluidLook(void);
+// Posted as a slider moves or the page resets them, so the player's field and the preview follow at once.
+extern NSNotificationName const SGRPlayerFluidLookDidChangeNotification;
+// The rows of the Now playing page for the background, and the Fluid artwork page they open.
+NSArray<SGModRow *> *SGRPlayerBackgroundRows(void);
+
 #pragma mark - the ⋯ menu (PlayerMenu.x)
 
 // Marks a sheet opened soon after a tap on `button`, the player's ⋯, as the one the menu takes over, and

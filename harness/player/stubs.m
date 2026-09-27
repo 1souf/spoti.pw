@@ -20,7 +20,8 @@ __weak UIView *sgr_playlistRoot = nil;
 
 NSString *const SGPlayerTransitionNotification = @"spotifyglass.playerTransition";
 NSString *const SGPlayerTransitionEndedNotification = @"spotifyglass.playerTransitionEnded";
-CFTimeInterval SGPlayerTransitionEnds(void) { return 0; }
+CFTimeInterval sg_harnessTransitionEnds;
+CFTimeInterval SGPlayerTransitionEnds(void) { return sg_harnessTransitionEnds > CACurrentMediaTime() ? sg_harnessTransitionEnds : 0; }
 
 #pragma mark - Shared/Player/PlayerState.x
 

@@ -1,6 +1,7 @@
 #import "Core/SGCore.h"
 #import "SGRField.h"
 #import "SGRFlow.h"
+#import "SGRWarp.h"
 #import "SGRBridges.h"
 #import "SGRPalette.h"
 #import "SGRTokens.h"
@@ -35,6 +36,7 @@ static NSDictionary *noActions(void) {
     CAGradientLayer *_black;
     CALayer *_backdrop;
     SGRFlowLayer *_flow;
+    SGRWarpLayer *_warp;
     BOOL _watching;
     UIColor *_color;
     UIColor *_preferred;   // the page's own colour, made fit; wins over the artwork's
@@ -52,6 +54,7 @@ static NSDictionary *noActions(void) {
     self.clipsToBounds = NO;
     self.accessibilityElementsHidden = YES;
     _color = SGRNeutralField();
+    _warpLook = SGRWarpDefaultLook;
 
     _solid = [CALayer layer];
     _solid.actions = noActions();
@@ -104,26 +107,41 @@ static NSDictionary *noActions(void) {
     _black.locations = @[@(MIN(1, from / total)), @(MIN(1, to / total))];
     _backdrop.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     _flow.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
+    // Over the pull above the player too, where the picture's top edge carries on.
+    _warp.frame = CGRectMake(0, -bleed.top, bounds.size.width, [self backdropHeightNow] + bleed.top);
+    _warp.pictureFrame = CGRectMake(0, bleed.top, bounds.size.width, [self backdropHeightNow]);
     [CATransaction commit];
 }
 
 #pragma mark - the moving field
 
-- (void)setFlows:(BOOL)flows {
-    if (flows == _flows) return;
-    _flows = flows;
-    if (flows && !_flow) {
+- (void)setMotion:(SGRFieldMotion)motion {
+    if (motion == SGRFieldMotionWarp && !SGRWarpAvailable()) motion = SGRFieldMotionFlow;
+    if (motion == _motion) return;
+    _motion = motion;
+    if (motion == SGRFieldMotionFlow && !_flow) {
         _flow = [SGRFlowLayer layer];
         _flow.hidden = YES;
         [self.layer insertSublayer:_flow above:_solid];
     }
-    // The moving field is the whole picture: no still backdrop over it, no fade to black under it.
-    _black.hidden = flows;
-    if (flows) _backdrop.hidden = YES;
-    else _flow.hidden = YES;
+    if (motion == SGRFieldMotionWarp && !_warp) {
+        _warp = [SGRWarpLayer layer];
+        _warp.look = _warpLook;
+        [self.layer insertSublayer:_warp above:_solid];
+    }
+    // A moving field is the whole picture: no still backdrop over it, no fade to black under it.
+    _black.hidden = motion != SGRFieldMotionNone;
+    if (motion != SGRFieldMotionNone) _backdrop.hidden = YES;
+    if (motion != SGRFieldMotionFlow) _flow.hidden = YES;
+    _warp.hidden = motion != SGRFieldMotionWarp;
     [self watch];
     [self updateMotion];
     [self setNeedsLayout];
+}
+
+- (void)setWarpLook:(SGRWarpLook)look {
+    _warpLook = look;
+    _warp.look = look;
 }
 
 - (void)setMotionHeld:(BOOL)held {
@@ -133,10 +151,11 @@ static NSDictionary *noActions(void) {
 }
 
 - (void)watch {
-    if (_watching || !_flows) return;
+    if (_watching || _motion == SGRFieldMotionNone) return;
     _watching = YES;
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
+                                      UIApplicationDidEnterBackgroundNotification, UIApplicationWillEnterForegroundNotification,
                                       NSProcessInfoPowerStateDidChangeNotification, UIAccessibilityReduceMotionStatusDidChangeNotification]) {
         [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
     }
@@ -153,11 +172,20 @@ static NSDictionary *noActions(void) {
 }
 
 - (void)updateMotion {
-    if (!_flow) return;
+    if (!_flow && !_warp) return;
     // A locked phone keeps the player in its window, so being in front counts as much as being in one.
-    BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    BOOL moving = _flows && !_flow.hidden && self.window && front && !SGRPlayerIsTransitioning() && !SGRReduceMotion()
-               && !NSProcessInfo.processInfo.lowPowerModeEnabled && !_motionHeld;
+    UIApplicationState state = UIApplication.sharedApplication.applicationState;
+    BOOL front = state == UIApplicationStateActive;
+    BOOL still = SGRReduceMotion() || NSProcessInfo.processInfo.lowPowerModeEnabled || _motionHeld;
+    if (_warp) {
+        SGRWarpPace pace = SGRWarpPaceMoving;
+        if (_motion != SGRFieldMotionWarp || !self.window || state == UIApplicationStateBackground) pace = SGRWarpPaceHidden;
+        else if (!front || SGRPlayerIsTransitioning()) pace = SGRWarpPaceFrozen;
+        else if (still) pace = SGRWarpPaceStill;
+        _warp.pace = pace;
+    }
+    if (!_flow) return;
+    BOOL moving = _motion == SGRFieldMotionFlow && !_flow.hidden && self.window && front && !SGRPlayerIsTransitioning() && !still;
     if (moving == _flow.moving) return;
     _flow.moving = moving;
     static NSUInteger logged;
@@ -227,8 +255,9 @@ static NSDictionary *noActions(void) {
     _image = image;
     _identity = [identity copy];
     NSUInteger generation = ++_generation;
-    SGRPaletteRequest request = {CGSizeZero, NO, YES, _flows};
-    if (_showsBackdrop && !_flows) request.backdropSize = CGSizeMake(self.bounds.size.width > 0 ? self.bounds.size.width : 402, [self backdropHeightNow]);
+    SGRPaletteRequest request = {CGSizeZero, NO, YES, _motion == SGRFieldMotionFlow};
+    if (_motion == SGRFieldMotionWarp) [_warp setArtwork:image animated:animated];
+    if (_showsBackdrop && _motion == SGRFieldMotionNone) request.backdropSize = CGSizeMake(self.bounds.size.width > 0 ? self.bounds.size.width : 402, [self backdropHeightNow]);
     __weak SGRArtworkField *weakSelf = self;
     [SGRPalette paletteForImage:image request:request completion:^(SGRPalette *palette) {
         SGRArtworkField *field = weakSelf;
@@ -239,7 +268,12 @@ static NSDictionary *noActions(void) {
 
 - (void)applyPalette:(SGRPalette *)palette animated:(BOOL)animated {
     _read = YES;
-    if (_flows && palette.flowColors) {
+    if (_motion == SGRFieldMotionWarp) {
+        [self applyColor:_preferred ?: palette.fieldColor animated:animated];
+        [self didColor];
+        return;
+    }
+    if (_motion == SGRFieldMotionFlow && palette.flowColors) {
         [_flow setColors:palette.flowColors animated:animated && !_flow.hidden];
         _flow.hidden = NO;
         [self updateMotion];
@@ -248,7 +282,7 @@ static NSDictionary *noActions(void) {
         [self didColor];
         return;
     }
-    if (_showsBackdrop && !_flows && palette.backdrop) {
+    if (_showsBackdrop && _motion == SGRFieldMotionNone && palette.backdrop) {
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         if (animated) {

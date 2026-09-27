@@ -2,7 +2,7 @@
 // a whole redesigned page, with no card and no seam anywhere. The player's field also carries the
 // artwork itself at the top, blurred and dimmed and dissolving into the colour (showsBackdrop).
 //
-// Nothing is blurred live and nothing is masked: the view draws a solid colour layer, a black gradient
+// Still, nothing is blurred live and nothing is masked: the view draws a solid colour layer, a black gradient
 // layer (the redesign is AMOLED throughout, fading the colour to black down the page) and at most one
 // bitmap layer rendered off the main thread, so it costs a few composited layers while the page moves. A new colour or bitmap crossfades over
 // SGRCrossfade; the same image again is a no-op.
@@ -11,21 +11,29 @@
 // associated object). The field retains its last image and palette only.
 // Threading: main thread only; the palette work it starts runs off it.
 #import <UIKit/UIKit.h>
+#import "SGRWarp.h"
 
 // Posted on the main thread by a field whose colour changed, with the field as the object and the
 // new colour under "color".
 extern NSNotificationName const SGRFieldColorDidChangeNotification;
+
+typedef NS_ENUM(NSInteger, SGRFieldMotion) {
+    SGRFieldMotionNone,   // the still backdrop, where the field shows one
+    SGRFieldMotionFlow,   // the artwork's colours drifting (SGRFlow.h)
+    SGRFieldMotionWarp,   // the artwork itself blurred and warped (SGRWarp.h)
+};
 
 @interface SGRArtworkField : UIView
 // Where the colour, the fade to black and the backdrop reach past the bounds (overscroll, a plane
 // that does not clip): positive values draw outside. The field never clips.
 @property (nonatomic) UIEdgeInsets bleed;
 @property (nonatomic) BOOL showsBackdrop;
-// The player's moving field instead of the still backdrop (SGRFlow.h): the artwork's colours drifting
-// over the whole of the bounds, with no fade to black. It moves only while the field is in a window,
-// the app is in front, the player is not opening or closing, Reduce Motion and Low Power Mode are off
-// and nothing holds it (motionHeld); otherwise it stays still where it was.
-@property (nonatomic) BOOL flows;
+// The player's moving field instead of the still backdrop, over the whole of the bounds with no fade to
+// black. It moves only while the field is in a window, the app is in front, the player is not opening
+// or closing, Reduce Motion and Low Power Mode are off and nothing holds it (motionHeld); otherwise it
+// stays still where it was.
+@property (nonatomic) SGRFieldMotion motion;
+@property (nonatomic) SGRWarpLook warpLook;
 // Held still by the owner (the player while playback is paused).
 @property (nonatomic) BOOL motionHeld;
 // The backdrop's height in points from the top of the bounds; 0 is the window's height.

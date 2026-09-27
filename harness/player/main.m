@@ -9,6 +9,11 @@
 //     scroll   the list moved up and down in code; the log says whether it stayed at its top
 //     artwork  issue #58: tracks change while the covers on screen and the picture server lag behind,
 //              checked by colour at the end of each step; the log says PASS or FAIL
+//     fluid    Fluid artwork: another album at 7 s (the crossfade), paused 11-13 s, the player's transition
+//              at 15 s, the sliders pushed at 17 s and reset at 20 s; the log has the warp's cost
+// HARNESS_BACKGROUND=0|1|2 stores Still artwork, Colour flow or Fluid artwork; unset leaves the default,
+// and HARNESS_OLD_MOTION=0 stores the Moving background switch it replaced, off, instead.
+// HARNESS_COVER=<path> starts on that picture (a local file, never one from the repo).
 //     taps     real touches on the progress bar (tap to seek, the thumb's own drag, the times beside it)
 //              and on the lyrics' thumbnail, alone and not; the log says PASS or FAIL
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
@@ -20,6 +25,10 @@
 #import "Redesigned/Player/Player.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Kit/SGRField.h"
+#import "Shared/Player/PlayerEvents.h"
+#import "Core/SGPrefs.h"
+
+extern CFTimeInterval sg_harnessTransitionEnds;
 #import "Redesigned/Kit/SGRGlyph.h"
 #import "touches.h"
 
@@ -473,7 +482,8 @@ static void loadLyrics(void) {
     tilt.accessibilityLabel = @"Inspect cover art";
     // The Encore.ImageView holding the picture (01.txt:40), which PlayerField.x reads the cover from.
     UIView *coverElement = box(tilt, UIView.class, tilt.bounds, @"Encore.ImageView");
-    UIImage *picture = artwork();
+    const char *coverPath = getenv("HARNESS_COVER");
+    UIImage *picture = (coverPath ? [UIImage imageWithContentsOfFile:@(coverPath)] : nil) ?: artwork();
     UIImageView *cover = [[UIImageView alloc] initWithFrame:coverElement.bounds];
     cover.image = picture;
     _cover = cover;
@@ -620,6 +630,7 @@ static void loadLyrics(void) {
     if ([scenario() isEqualToString:@"artwork"]) [self runArtworkChecks];
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
     else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
+    else if ([scenario() isEqualToString:@"fluid"]) [self runFluid];
     else if ([scenario() isEqualToString:@"taps"]) [self runTaps];
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
@@ -744,6 +755,48 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
         list.contentOffset = CGPointMake(0, top);
         NSLog(@"[harness] scroll checks: up %@, down %@, again %@ -- %@", up ? @"held" : @"moved", down ? @"kept" : @"lost",
               again ? @"held" : @"moved", up && down && again ? @"PASS" : @"FAIL");
+    });
+}
+
+- (void)runFluid {
+    NSLog(@"[harness] background style %ld, fluid look speed %.2f warp %.2f blur %.0f saturation %.2f brightness %.2f",
+          (long)SGRPlayerBackgroundStyle(), SGRPlayerFluidLook().speed, SGRPlayerFluidLook().warp, SGRPlayerFluidLook().blur,
+          SGRPlayerFluidLook().saturation, SGRPlayerFluidLook().brightness);
+    UIImage *second = secondArtwork();
+    after(7, ^{
+        serve(imageURI(@"ffff"), second, 0.25, NO);
+        [self playTrack:@"spotify:track:harnessF" image:imageURI(@"ffff")];
+    });
+    after(7.4, ^{ [self showOnScreen:second]; });
+    after(11, ^{
+        NSLog(@"[harness] paused");
+        SGRHarnessSetTrack(@"spotify:track:harnessF", imageURI(@"ffff"), YES);
+    });
+    after(13, ^{
+        NSLog(@"[harness] playing");
+        SGRHarnessSetTrack(@"spotify:track:harnessF", imageURI(@"ffff"), NO);
+    });
+    after(15, ^{
+        NSLog(@"[harness] the player's transition begins");
+        sg_harnessTransitionEnds = CACurrentMediaTime() + 0.5;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+    });
+    after(15.5, ^{
+        NSLog(@"[harness] the player's transition ends");
+        sg_harnessTransitionEnds = 0;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+    });
+    after(17, ^{
+        NSLog(@"[harness] sliders pushed");
+        SGSetInt(SGRKeyFluidSpeed, 300);
+        SGSetInt(SGRKeyFluidSaturation, 250);
+        SGSetInt(SGRKeyFluidBlur, 3);
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerFluidLookDidChangeNotification object:nil];
+    });
+    after(20, ^{
+        NSLog(@"[harness] sliders reset");
+        for (NSString *key in @[SGRKeyFluidSpeed, SGRKeyFluidSaturation, SGRKeyFluidBlur]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerFluidLookDidChangeNotification object:nil];
     });
 }
 
@@ -985,7 +1038,14 @@ static UIView *viewWithIdentifier(UIView *root, NSString *identifier) {
 
 // Before every %ctor, so the redesign's gate reads on, and every session gets the picture server.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setBool:YES forKey:@"spotifyglass.redesign"];
+    for (NSString *key in store.dictionaryRepresentation.allKeys) {
+        if ([key hasPrefix:@"spotifyglass.redesign.player."]) [store removeObjectForKey:key];
+    }
+    const char *background = getenv("HARNESS_BACKGROUND"), *oldMotion = getenv("HARNESS_OLD_MOTION");
+    if (background) [store setInteger:atoi(background) forKey:SGRKeyPlayerBackground];
+    if (oldMotion) [store setBool:atoi(oldMotion) != 0 forKey:SGRKeyPlayerMotionWas];
     Method original = class_getClassMethod(NSURLSessionConfiguration.class, @selector(defaultSessionConfiguration));
     Method harness = class_getClassMethod(NSURLSessionConfiguration.class, @selector(sgr_harnessDefault));
     method_exchangeImplementations(original, harness);

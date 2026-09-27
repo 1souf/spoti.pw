@@ -339,7 +339,10 @@ Player: Gestures, Blocked artists (with the count on the row) and Lock screen wi
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player
-buttons to hide); in the redesign instead Now playing (its device button and the moving background). Then Vibrations under either look, a card for
+buttons to hide); in the redesign instead Now playing (its device button and the Background behind the player: Still artwork,
+Colour flow or Fluid artwork, the default, the cover itself Kawase blurred and warped on Metal, ported from kawarp
+(Redesigned/Kit/SGRWarp.m); its page has a live preview over Speed, Warp, Blur, Saturation and Brightness, which the
+player follows as they move, and Reset; laid out against harness/kawarp/, the player's side against harness/player/). Then Vibrations under either look, a card for
 Controls (on until switched off) and one for Music Haptics (off until switched on, with an ⓘ saying it
 follows the sound this iPhone plays while Spotify is open), each opening out while its switch is on:
 Controls into its Strength (10 to 100%, a tap at the new strength with each step), Music Haptics into its
