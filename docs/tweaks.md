@@ -45,12 +45,12 @@ screens works under both. So the sources are four layers, each a directory of fe
     Redesigned/   the redesign; every %ctor starts with `if (!SGRedesignedUI()) return;`
     App/          Mod Settings' root and the pages that combine the layers, the Mod page, the tour
 
-`SGRedesignAvailable()` (Core/SGUIMode.h) holds the redesign to iOS 26 and up: it is Liquid Glass, and
+`SGRedesignTested()` (Core/SGUIMode.h) is YES from iOS 26: the redesign is Liquid Glass, and
 `UIGlassEffect` is the system's, so on an older OS the glass calls fall back to a blur and the redesign
-runs untested against an older UIKit (issue #37, an iOS 17 scene-update watchdog). Below 26 both
-`SGRedesignedUI()` and `SGRedesignedUIStored()` answer NO whatever is stored, so no Redesigned/ %ctor
-runs, App/Pages.m draws the switch as a "Needs iOS 26" row and the tour greys its card out. The stored
-key is left alone, so a phone that updates gets its redesign back.
+runs untested against an older UIKit (issue #37, an iOS 17 scene-update watchdog). Below 26 it can still
+be picked: App/Pages.m's restart alert and the tour's note under the cards say it is untested first, and
+`SGSetRedesignedUI()` stores `SGKeyRedesignUntested` along with the switch. Without that key the redesign
+does not run below 26, and `SGRedesignedUI()` turns off a switch stored before the warning existed.
 
 The two looks never run together, so each hooks the same Spotify class in its own way, and a part of
 the look is edited on its own side without touching the other: where both need the same thing, each
