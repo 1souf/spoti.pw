@@ -11,10 +11,10 @@ static const NSUInteger kBlurSide = 128;
 static const CGFloat kPixelsPerPoint = 0.5;
 static const CFTimeInterval kFade = 1.0;
 static const float kTint[3] = {0.157f, 0.157f, 0.235f}, kTintAmount = 0.15f;
-// The colour's linear luminance is held under this (SGRPalette's moving-field ceilings), so white
-// text keeps better than 5.5:1 at full brightness.
+// The colour's linear luminance is held under this (0.07 with Increase Contrast), so white text keeps
+// better than 5.5:1 at full brightness.
 static const float kCeiling = 0.13f, kCeilingContrast = 0.07f;
-// SGRFlow's shade: clear down to this share of the picture, then this much black at its bottom.
+// The shade under the controls: clear down to this share of the picture, then this much black at its bottom.
 static const float kShadeFrom = 0.45f, kShadeBottom = 0.35f;
 static const float kDither = 0.008f;
 

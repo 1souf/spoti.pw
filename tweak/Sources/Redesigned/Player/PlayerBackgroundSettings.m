@@ -1,12 +1,15 @@
-// The player's background on Mod Settings' Player page: which of the three moves behind the player, and the
-// Fluid artwork page, its sliders under a preview drawn by the same renderer as the player's field.
+// The player's background on Mod Settings' Player page: Fluid artwork or Animated artwork, Animated
+// artwork's sources, and the Fluid artwork page, its sliders under a preview drawn by the same renderer
+// as the player's field.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Player.h"
 
 NSNotificationName const SGRPlayerFluidLookDidChangeNotification = @"spotifyglass.redesign.player.fluidLookDidChange";
+NSNotificationName const SGRPlayerBackgroundDidChangeNotification = @"spotifyglass.redesign.player.backgroundDidChange";
 
 static const SGRPlayerBackground kDefaultBackground = SGRPlayerBackgroundFluid;
 
@@ -27,24 +30,25 @@ static NSInteger stored(SGRFluidSlider slider) {
     return MAX(slider.minimum, MIN(slider.maximum, SGInt(slider.key, slider.fallback)));
 }
 
-// Once: a Moving background switched off is Still artwork; one left on takes the default.
+// Still artwork, Colour flow and the Moving background switch are gone, and whatever they stored reads as
+// Fluid artwork, the default: the old keys only have to go.
 static void migrate(void) {
+    static BOOL done;
+    if (done) return;
+    done = YES;
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
-    id was = [store objectForKey:SGRKeyPlayerMotionWas];
-    if (!was) return;
-    if (![store objectForKey:SGRKeyPlayerBackground] && ![was boolValue]) [store setInteger:SGRPlayerBackgroundStill forKey:SGRKeyPlayerBackground];
-    [store removeObjectForKey:SGRKeyPlayerMotionWas];
-}
-
-// A reset to stock leaves the player's background still, as it left the switch off.
-static NSInteger fallbackBackground(void) {
-    return [NSUserDefaults.standardUserDefaults boolForKey:SGKeyStock] ? SGRPlayerBackgroundStill : kDefaultBackground;
+    for (NSString *key in @[SGRKeyPlayerBackgroundWas, SGRKeyPlayerMotionWas]) {
+        id was = [store objectForKey:key];
+        if (!was) continue;
+        [store removeObjectForKey:key];
+        SGLog(@"redesign player: %@ was %@, now Fluid artwork", key, was);
+    }
 }
 
 SGRPlayerBackground SGRPlayerBackgroundStyle(void) {
     migrate();
-    NSInteger style = SGInt(SGRKeyPlayerBackground, fallbackBackground());
-    return style >= SGRPlayerBackgroundStill && style <= SGRPlayerBackgroundFluid ? (SGRPlayerBackground)style : kDefaultBackground;
+    NSInteger style = SGInt(SGRKeyPlayerBackground, kDefaultBackground);
+    return style >= SGRPlayerBackgroundFluid && style <= SGRPlayerBackgroundAnimated ? (SGRPlayerBackground)style : kDefaultBackground;
 }
 
 SGRWarpLook SGRPlayerFluidLook(void) {
@@ -159,11 +163,18 @@ static UIViewController *fluidPage(void) {
 
 NSArray<SGModRow *> *SGRPlayerBackgroundRows(void) {
     migrate();
-    SGModRow *style = SGChoiceRow(@"Background", nil, SGRKeyPlayerBackground, @[@"Still artwork", @"Colour flow", @"Fluid artwork"], fallbackBackground());
-    style.choiceNotes = @[@"The cover, blurred and held still", @"Soft patches of the cover's colours drifting",
-                          @"The cover itself, blurred and slowly warped"];
-    style.choiceFooter = @"A paused song holds the background still.";
+    SGModRow *style = SGChoiceRow(@"Background", nil, SGRKeyPlayerBackground, @[@"Fluid artwork", @"Animated artwork"], kDefaultBackground);
+    style.choiceNotes = @[@"The cover itself, blurred and slowly warped",
+                          @"The track's Canvas or the album's animated cover, looping"];
+    style.choiceFooter = @"A paused song holds the background still. Animated artwork shows Fluid artwork for a track "
+                          "without a clip, and in Low Power Mode or with Reduce Motion on.";
+    style.chosen = ^(NSInteger index) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerBackgroundDidChangeNotification object:nil];
+    };
+    SGModRow *sources = SGArtworkSourcesRow(SGRKeyPlayerArtworkSources,
+        @"Asked top to bottom until one has a clip. Apple Music gets only the artist and album name.");
+    sources.visible = ^BOOL { return SGRPlayerBackgroundStyle() == SGRPlayerBackgroundAnimated; };
+    // Animated artwork falls back to Fluid artwork, so its page matters under either choice.
     SGModRow *fluid = SGPageRow(@"Fluid artwork", ^UIViewController *{ return fluidPage(); });
-    fluid.visible = ^BOOL { return SGRPlayerBackgroundStyle() == SGRPlayerBackgroundFluid; };
-    return @[style, fluid];
+    return @[style, sources, fluid];
 }

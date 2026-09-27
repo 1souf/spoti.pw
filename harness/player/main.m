@@ -11,8 +11,13 @@
 //              checked by colour at the end of each step; the log says PASS or FAIL
 //     fluid    Fluid artwork: another album at 7 s (the crossfade), paused 11-13 s, the player's transition
 //              at 15 s, the sliders pushed at 17 s and reset at 20 s; the log has the warp's cost
-// HARNESS_BACKGROUND=0|1|2 stores Still artwork, Colour flow or Fluid artwork; unset leaves the default,
-// and HARNESS_OLD_MOTION=0 stores the Moving background switch it replaced, off, instead.
+//     animated Animated artwork over the local clips in HARNESS_CLIPS (canvas.mp4, apple.mp4, late.mp4,
+//              bright.mp4): a Canvas, Apple's cover fetched ahead, a track without a clip, one still
+//              downloading, a pause, the lyrics, Spotify's own video, a bright clip; the log says PASS or
+//              FAIL. HARNESS_STEPPED=1 waits for `notifyutil -p com.vojta.harness.next` before each step
+// HARNESS_BACKGROUND=0|1 stores Fluid artwork or Animated artwork (animated's default); unset leaves the
+// default. HARNESS_OLD_BACKGROUND=0|1|2 stores the choice before it (Still, Colour flow, Fluid) and
+// HARNESS_OLD_MOTION=0 the Moving background switch before that, off.
 // HARNESS_COVER=<path> starts on that picture (a local file, never one from the repo).
 //     taps     real touches on the progress bar (tap to seek, the thumb's own drag, the times beside it)
 //              and on the lyrics' thumbnail, alone and not; the log says PASS or FAIL
@@ -20,6 +25,7 @@
 // HARNESS_FREE=1 builds the units under the class names Spotify Free's player (the Reinvent Free mode)
 // gives them, around the same elements.
 #import <UIKit/UIKit.h>
+#import <notify.h>
 #import <objc/runtime.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Redesigned/Player/Player.h"
@@ -34,6 +40,9 @@ extern CFTimeInterval sg_harnessTransitionEnds;
 
 void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
+void SGRHarnessSetTrackWith(NSString *uri, NSString *imageURI, BOOL paused, NSDictionary *extra, NSArray<NSDictionary *> *future);
+extern NSMutableDictionary<NSString *, NSURL *> *SGRHarnessAppleClips;
+extern NSMutableDictionary<NSString *, NSNumber *> *SGRHarnessClipDelays;
 NSUInteger SGRHarnessLineSeeks(void);
 NSUInteger SGRHarnessSkipTaps(void);
 
@@ -195,6 +204,20 @@ static NSString *colorName(UIImage *image) {
 
 @interface _TtC18NowPlaying_BarImpl27NowPlayingBarViewController : UIViewController @end
 @implementation _TtC18NowPlaying_BarImpl27NowPlayingBarViewController @end
+
+// Spotify's views a music video plays on (Switch to video): PlayerAnimated.x hears a video come and go.
+@interface _TtC22NowPlaying_ElementsKit14VideoElementUI : NSObject
+- (void)videoSurfaceDidAttachVideo:(id)surface;
+- (void)videoSurfaceDidDetachVideo:(id)surface;
+@end
+@implementation _TtC22NowPlaying_ElementsKit14VideoElementUI
+- (void)videoSurfaceDidAttachVideo:(id)surface {}
+- (void)videoSurfaceDidDetachVideo:(id)surface {}
+@end
+@interface _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel : _TtC22NowPlaying_ElementsKit14VideoElementUI @end
+@implementation _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel @end
+@interface _TtC28NowPlaying_ContentLayersImpl31VerticalVideoCellImplementation : _TtC22NowPlaying_ElementsKit14VideoElementUI @end
+@implementation _TtC28NowPlaying_ContentLayersImpl31VerticalVideoCellImplementation @end
 
 @interface _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView : UIView
 - (void)handleTap;
@@ -631,6 +654,7 @@ static void loadLyrics(void) {
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
     else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
     else if ([scenario() isEqualToString:@"fluid"]) [self runFluid];
+    else if ([scenario() isEqualToString:@"animated"]) [self runAnimated];
     else if ([scenario() isEqualToString:@"taps"]) [self runTaps];
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
@@ -798,6 +822,169 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
         for (NSString *key in @[SGRKeyFluidSpeed, SGRKeyFluidSaturation, SGRKeyFluidBlur]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
         [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerFluidLookDidChangeNotification object:nil];
     });
+}
+
+#pragma mark - Animated artwork
+
+static UIView *viewOfClass(UIView *root, NSString *name);
+
+- (UIView *)animatedView {
+    return viewOfClass(self.window, @"SGRPlayerAnimatedView");
+}
+
+- (void)checkAnimated:(NSString *)step shows:(BOOL)shows {
+    UIView *view = [self animatedView];
+    CALayer *shown = view.layer.presentationLayer ?: view.layer;
+    BOOL covered = SGRPlayerField().covered;
+    [self expect:(shows ? shown.opacity > 0.99 : shown.opacity < 0.01) && covered == shows
+            that:[NSString stringWithFormat:@"%@: the clip %@ (opacity %.2f), Fluid artwork %@", step, shows ? @"shows" : @"is away",
+                  shown.opacity, covered ? @"stopped under it" : @"drawing"]];
+}
+
+// The dim over the clip, the sublayer after the clips'.
+- (float)animatedDim {
+    CALayer *dim = [self animatedView].layer.sublayers[1];
+    return ((CALayer *)dim.presentationLayer ?: dim).opacity;
+}
+
+// Each step a moment apart, or, with HARNESS_STEPPED set, as `notifyutil -p com.vojta.harness.next` asks
+// for it, so a script can screenshot each state once it has settled.
+- (void)playSteps:(NSArray<dispatch_block_t> *)steps {
+    __block NSUInteger at = 0;
+    void (^next)(void) = ^{
+        if (at >= steps.count) return;
+        NSLog(@"[harness] step %lu", (unsigned long)at);
+        steps[at++]();
+    };
+    if (getenv("HARNESS_STEPPED")) {
+        int token;
+        notify_register_dispatch("com.vojta.harness.next", &token, dispatch_get_main_queue(), ^(int t) { next(); });
+        NSLog(@"[harness] stepped: waiting for com.vojta.harness.next");
+        return;
+    }
+    for (NSUInteger i = 0; i < steps.count; i++) after(1.5 + 3.5 * i, next);
+}
+
+- (float)clipRate {
+    id clip = [[self animatedView] valueForKey:@"clip"];
+    return [[[clip valueForKey:@"player"] valueForKey:@"rate"] floatValue];
+}
+
+- (void)runAnimated {
+    const char *folder = getenv("HARNESS_CLIPS");
+    if (!folder) {
+        NSLog(@"[harness] animated: HARNESS_CLIPS names no folder of clips");
+        return;
+    }
+    NSURL *(^clip)(NSString *) = ^NSURL *(NSString *name) { return [NSURL fileURLWithPath:[@(folder) stringByAppendingPathComponent:name]]; };
+    NSDictionary *(^canvas)(NSString *) = ^NSDictionary *(NSString *name) {
+        return @{@"canvas.url": clip(name).absoluteString, @"canvas.type": @"VIDEO_LOOPING", @"canvas.id": name.stringByDeletingPathExtension};
+    };
+    SGRHarnessAppleClips = [@{@"Low Tide": clip(@"apple.mp4")} mutableCopy];
+    SGRHarnessClipDelays = [@{@"apple.mp4": @1.0, @"late.mp4": @1.5} mutableCopy];
+    NSDictionary *lowTide = @{@"album_title": @"Low Tide", @"artist_name": @"The Harness"};
+    UIImage *first = _cover.image, *second = secondArtwork();
+    serve(imageURI(@"ffff"), second, 0.25, NO);
+    NSLog(@"[harness] animated: background style %ld", (long)SGRPlayerBackgroundStyle());
+    __block float dimBefore = 0;
+    _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel *video = [_TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel new];
+
+    [self playSteps:@[
+        ^{ [self checkAnimated:@"1 no clip for the first track" shows:NO]; },
+        // A Canvas on disk, with Apple Music's cover of the next track fetched ahead.
+        ^{
+            NSLog(@"[harness] track: a Canvas");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessCanvas", imageURI(@"aaaa"), NO, canvas(@"canvas.mp4"),
+                                   @[@{@"uri": @"spotify:track:harnessApple", @"metadata": lowTide}]);
+            after(2, ^{ [self checkAnimated:@"2 the Canvas faded in over Fluid artwork" shows:YES]; });
+        },
+        // The next track, fetched ahead: straight to its clip.
+        ^{
+            NSLog(@"[harness] track: Apple Music's cover, fetched ahead");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessApple", imageURI(@"ffff"), NO, lowTide,
+                                   @[@{@"uri": @"spotify:track:harnessNone", @"metadata": @{}}]);
+            after(0.3, ^{ [self checkAnimated:@"3 crossing straight to the next clip, Fluid artwork still stopped" shows:YES]; });
+            after(0.4, ^{ [self showOnScreen:second]; });
+            after(2, ^{ [self checkAnimated:@"4 Apple Music's cover" shows:YES]; });
+        },
+        // Nothing anywhere: back to Fluid artwork.
+        ^{
+            NSLog(@"[harness] track: no clip anywhere");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessNone", imageURI(@"aaaa"), NO, nil,
+                                   @[@{@"uri": @"spotify:track:harnessLate", @"metadata": @{}}]);
+            after(0.4, ^{ [self showOnScreen:first]; });
+            after(2, ^{ [self checkAnimated:@"5 a track without a clip" shows:NO]; });
+        },
+        // A Canvas the track names only once it plays, 1.5 s from landing.
+        ^{
+            NSLog(@"[harness] track: a Canvas still downloading");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), NO, canvas(@"late.mp4"), nil);
+            after(0.4, ^{ [self showOnScreen:second]; });
+            after(0.8, ^{ [self checkAnimated:@"6 Fluid artwork while it downloads" shows:NO]; });
+            after(3, ^{ [self checkAnimated:@"7 the downloaded Canvas faded in" shows:YES]; });
+        },
+        ^{
+            NSLog(@"[harness] paused");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), YES, canvas(@"late.mp4"), nil);
+            after(1, ^{ [self expect:[self clipRate] == 0 that:[NSString stringWithFormat:@"8 paused, the clip holds its frame (rate %.0f)", [self clipRate]]]; });
+        },
+        ^{
+            NSLog(@"[harness] playing");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), NO, canvas(@"late.mp4"), nil);
+            after(1, ^{ [self expect:[self clipRate] == 1 that:[NSString stringWithFormat:@"9 playing again (rate %.0f)", [self clipRate]]]; });
+        },
+        ^{
+            dimBefore = [self animatedDim];
+            NSLog(@"[harness] opening the lyrics");
+            SGRPlayerToggleLyrics();
+            after(1.5, ^{
+                float dim = [self animatedDim];
+                [self expect:SGRPlayerLyricsOpen() && dim > dimBefore + 0.1f
+                        that:[NSString stringWithFormat:@"10 the lyrics up dim the clip from %.2f to %.2f", dimBefore, dim]];
+            });
+        },
+        ^{
+            NSLog(@"[harness] closing the lyrics");
+            SGRPlayerToggleLyrics();
+        },
+        ^{
+            NSLog(@"[harness] Spotify's video comes on");
+            [video videoSurfaceDidAttachVideo:nil];
+            after(1.5, ^{ [self checkAnimated:@"11 Spotify's own video showing" shows:NO]; });
+        },
+        ^{
+            NSLog(@"[harness] Spotify's video goes");
+            [video videoSurfaceDidDetachVideo:nil];
+            after(2, ^{ [self checkAnimated:@"12 the clip back after the video" shows:YES]; });
+        },
+        ^{
+            NSLog(@"[harness] the player's transition begins");
+            sg_harnessTransitionEnds = CACurrentMediaTime() + 0.5;
+            [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+            after(0.2, ^{ [self expect:[self clipRate] == 0 that:@"13 held while the player opens or closes"]; });
+            after(0.5, ^{
+                NSLog(@"[harness] the player's transition ends");
+                sg_harnessTransitionEnds = 0;
+                [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+            });
+            after(1, ^{ [self expect:[self clipRate] == 1 that:@"14 playing again once it is open"]; });
+        },
+        // The worst case for the text: a nearly white clip, with and without the lyrics.
+        ^{
+            NSLog(@"[harness] track: a bright Canvas");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessBright", imageURI(@"aaaa"), NO, canvas(@"bright.mp4"), nil);
+            after(0.4, ^{ [self showOnScreen:first]; });
+            after(2, ^{ [self checkAnimated:@"15 the bright Canvas" shows:YES]; });
+        },
+        ^{ SGRPlayerToggleLyrics(); },
+        ^{
+            SGRPlayerToggleLyrics();
+            after(1, ^{
+                NSLog(@"[harness] animated checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures),
+                      (unsigned long)self->_checks, self->_failures ? @"FAIL" : @"PASS");
+            });
+        },
+    ]];
 }
 
 // One track, then another album's at 8 s, its picture on the screens 0.4 s later.
@@ -1043,8 +1230,11 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
     for (NSString *key in store.dictionaryRepresentation.allKeys) {
         if ([key hasPrefix:@"spotifyglass.redesign.player."]) [store removeObjectForKey:key];
     }
-    const char *background = getenv("HARNESS_BACKGROUND"), *oldMotion = getenv("HARNESS_OLD_MOTION");
+    const char *background = getenv("HARNESS_BACKGROUND"), *oldBackground = getenv("HARNESS_OLD_BACKGROUND"),
+               *oldMotion = getenv("HARNESS_OLD_MOTION");
+    if (!background && [scenario() isEqualToString:@"animated"]) background = "1";
     if (background) [store setInteger:atoi(background) forKey:SGRKeyPlayerBackground];
+    if (oldBackground) [store setInteger:atoi(oldBackground) forKey:SGRKeyPlayerBackgroundWas];
     if (oldMotion) [store setBool:atoi(oldMotion) != 0 forKey:SGRKeyPlayerMotionWas];
     Method original = class_getClassMethod(NSURLSessionConfiguration.class, @selector(defaultSessionConfiguration));
     Method harness = class_getClassMethod(NSURLSessionConfiguration.class, @selector(sgr_harnessDefault));

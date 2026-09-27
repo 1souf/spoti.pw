@@ -14,11 +14,12 @@ no scene delegate. `SRC=<another checkout>/tweak/Sources OUT=<dir> ./build.sh` b
 sources, for example an older commit, to see a bug before its fix.
 
 `build.sh` runs `logos.pl -c generator=internal` over `PlayerLyrics.x`, `PlayerArtwork.x`,
-`PlayerFooter.x`, `PlayerControls.x`, `PlayerScroll.x`, `PlayerField.x` and the Kit's `SGRBridges.x`, and links them with
-the real `Core/`, `Settings/`, `Redesigned/Kit/`, `PlayerBackgroundSettings.m` and `SGRKaraokeView`. `stubs.m` stands in for the hooks the harness
-does not compile (the Kit's accent and repaint, the rest of the player, the lyrics store, the haptics)
+`PlayerFooter.x`, `PlayerControls.x`, `PlayerScroll.x`, `PlayerField.x`, `PlayerAnimated.x` and the Kit's `SGRBridges.x`, and
+links them with the real `Core/`, `Settings/`, `Redesigned/Kit/`, `PlayerBackgroundSettings.m`, `SGRKaraokeView` and
+`Shared/LockScreenArtwork`'s order and canvas reading. `stubs.m` stands in for the hooks the harness does not compile (the Kit's
+accent and repaint, the rest of the player, the lyrics store, the haptics, where Animated artwork's clips come from)
 and plays a mock player: `SGRHarnessSetTrack` reports a track, with the image ids Spotify's metadata
-carries, to every state observer. A song of ten timed lines plays on from launch. `main.m` also answers
+carries, to every state observer, and `SGRHarnessSetTrackWith` the same with more metadata and the tracks up next. A song of ten timed lines plays on from launch. `main.m` also answers
 for i.scdn.co through an `NSURLProtocol` handed to every session, so each picture the Kit fetches can
 come late, out of order, or not at all.
 
@@ -46,8 +47,19 @@ come late, out of order, or not at all.
   as the page's sliders do. The log's `redesign warp:` lines pair the link's runs and stops with each step
   and give its cost a frame.
 
-`HARNESS_BACKGROUND=0|1|2` stores Still artwork, Colour flow or Fluid artwork (unset is the default), and
-`HARNESS_OLD_MOTION=0` the Moving background switch it replaced, off. `HARNESS_COVER=<path>` starts on a
+- `animated` is Animated artwork over local clips, from the folder `HARNESS_CLIPS` names (`canvas.mp4` and
+  `late.mp4` at 9:16, `apple.mp4` at 3:4, `bright.mp4` nearly white; make them with ffmpeg, e.g.
+  `ffmpeg -f lavfi -i testsrc2=s=360x640:r=30:d=4 -c:v libx264 -pix_fmt yuv420p canvas.mp4`, and keep them out of
+  the repo). A Canvas fades in over Fluid artwork, Apple Music's cover fetched ahead takes over straight from it,
+  a track without a clip goes back to Fluid artwork, a Canvas still downloading shows Fluid artwork until it
+  lands, then a pause, the lyrics, Spotify's own video coming and going, the player's transition and a bright
+  clip. The log ends with `animated checks: n of 15 right -- PASS` or `FAIL`. With `HARNESS_STEPPED=1` each
+  step waits for `xcrun simctl spawn <udid> notifyutil -p com.vojta.harness.next`, so a script can screenshot
+  every state once it has settled.
+
+`HARNESS_BACKGROUND=0|1` stores Fluid artwork or Animated artwork (unset is the default, `animated` picks
+Animated artwork), `HARNESS_OLD_BACKGROUND=0|1|2` the choice before it (Still artwork, Colour flow, Fluid artwork)
+and `HARNESS_OLD_MOTION=0` the Moving background switch before that, off. `HARNESS_COVER=<path>` starts on a
 picture of your own; keep real covers out of the repo.
 
 `HARNESS_VOLUME=0` leaves out the volume row that the phone has and the tree does not.

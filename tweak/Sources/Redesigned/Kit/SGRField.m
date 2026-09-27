@@ -1,6 +1,5 @@
 #import "Core/SGCore.h"
 #import "SGRField.h"
-#import "SGRFlow.h"
 #import "SGRWarp.h"
 #import "SGRBridges.h"
 #import "SGRPalette.h"
@@ -34,8 +33,6 @@ static NSDictionary *noActions(void) {
 @implementation SGRArtworkField {
     CALayer *_solid;
     CAGradientLayer *_black;
-    CALayer *_backdrop;
-    SGRFlowLayer *_flow;
     SGRWarpLayer *_warp;
     BOOL _watching;
     UIColor *_color;
@@ -65,12 +62,6 @@ static NSDictionary *noActions(void) {
     _black.actions = noActions();
     _black.colors = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor, (id)UIColor.blackColor.CGColor];
     [self.layer addSublayer:_black];
-
-    _backdrop = [CALayer layer];
-    _backdrop.actions = noActions();
-    _backdrop.contentsGravity = kCAGravityResize;
-    _backdrop.hidden = YES;
-    [self.layer addSublayer:_backdrop];
     return self;
 }
 
@@ -78,17 +69,8 @@ static NSDictionary *noActions(void) {
     return _color;
 }
 
-- (CGFloat)backdropHeightNow {
-    return _backdropHeight > 0 ? _backdropHeight : windowHeight(self);
-}
-
 - (void)setBleed:(UIEdgeInsets)bleed {
     _bleed = bleed;
-    [self setNeedsLayout];
-}
-
-- (void)setBackdropHeight:(CGFloat)height {
-    _backdropHeight = height;
     [self setNeedsLayout];
 }
 
@@ -105,34 +87,25 @@ static NSDictionary *noActions(void) {
     CGFloat to = MAX(from + 1, height * kBlackTo + bleed.top);
     _black.frame = painted;
     _black.locations = @[@(MIN(1, from / total)), @(MIN(1, to / total))];
-    _backdrop.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
-    _flow.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     // Over the pull above the player too, where the picture's top edge carries on.
-    _warp.frame = CGRectMake(0, -bleed.top, bounds.size.width, [self backdropHeightNow] + bleed.top);
-    _warp.pictureFrame = CGRectMake(0, bleed.top, bounds.size.width, [self backdropHeightNow]);
+    _warp.frame = CGRectMake(0, -bleed.top, bounds.size.width, height + bleed.top);
+    _warp.pictureFrame = CGRectMake(0, bleed.top, bounds.size.width, height);
     [CATransaction commit];
 }
 
 #pragma mark - the moving field
 
 - (void)setMotion:(SGRFieldMotion)motion {
-    if (motion == SGRFieldMotionWarp && !SGRWarpAvailable()) motion = SGRFieldMotionFlow;
+    if (motion == SGRFieldMotionWarp && !SGRWarpAvailable()) motion = SGRFieldMotionNone;
     if (motion == _motion) return;
     _motion = motion;
-    if (motion == SGRFieldMotionFlow && !_flow) {
-        _flow = [SGRFlowLayer layer];
-        _flow.hidden = YES;
-        [self.layer insertSublayer:_flow above:_solid];
-    }
     if (motion == SGRFieldMotionWarp && !_warp) {
         _warp = [SGRWarpLayer layer];
         _warp.look = _warpLook;
         [self.layer insertSublayer:_warp above:_solid];
     }
-    // A moving field is the whole picture: no still backdrop over it, no fade to black under it.
+    // A moving field is the whole picture, with no fade to black under it.
     _black.hidden = motion != SGRFieldMotionNone;
-    if (motion != SGRFieldMotionNone) _backdrop.hidden = YES;
-    if (motion != SGRFieldMotionFlow) _flow.hidden = YES;
     _warp.hidden = motion != SGRFieldMotionWarp;
     [self watch];
     [self updateMotion];
@@ -147,6 +120,12 @@ static NSDictionary *noActions(void) {
 - (void)setMotionHeld:(BOOL)held {
     if (held == _motionHeld) return;
     _motionHeld = held;
+    [self updateMotion];
+}
+
+- (void)setCovered:(BOOL)covered {
+    if (covered == _covered) return;
+    _covered = covered;
     [self updateMotion];
 }
 
@@ -172,24 +151,15 @@ static NSDictionary *noActions(void) {
 }
 
 - (void)updateMotion {
-    if (!_flow && !_warp) return;
+    if (!_warp) return;
     // A locked phone keeps the player in its window, so being in front counts as much as being in one.
     UIApplicationState state = UIApplication.sharedApplication.applicationState;
-    BOOL front = state == UIApplicationStateActive;
     BOOL still = SGRReduceMotion() || NSProcessInfo.processInfo.lowPowerModeEnabled || _motionHeld;
-    if (_warp) {
-        SGRWarpPace pace = SGRWarpPaceMoving;
-        if (_motion != SGRFieldMotionWarp || !self.window || state == UIApplicationStateBackground) pace = SGRWarpPaceHidden;
-        else if (!front || SGRPlayerIsTransitioning()) pace = SGRWarpPaceFrozen;
-        else if (still) pace = SGRWarpPaceStill;
-        _warp.pace = pace;
-    }
-    if (!_flow) return;
-    BOOL moving = _motion == SGRFieldMotionFlow && !_flow.hidden && self.window && front && !SGRPlayerIsTransitioning() && !still;
-    if (moving == _flow.moving) return;
-    _flow.moving = moving;
-    static NSUInteger logged;
-    if (logged++ < 6) SGLog(@"redesign kit: moving field %@", moving ? @"moves" : @"holds still");
+    SGRWarpPace pace = SGRWarpPaceMoving;
+    if (_motion != SGRFieldMotionWarp || !self.window || state == UIApplicationStateBackground) pace = SGRWarpPaceHidden;
+    else if (state != UIApplicationStateActive || SGRPlayerIsTransitioning() || _covered) pace = SGRWarpPaceFrozen;
+    else if (still) pace = SGRWarpPaceStill;
+    _warp.pace = pace;
 }
 
 - (void)didMoveToWindow {
@@ -255,9 +225,8 @@ static NSDictionary *noActions(void) {
     _image = image;
     _identity = [identity copy];
     NSUInteger generation = ++_generation;
-    SGRPaletteRequest request = {CGSizeZero, NO, YES, _motion == SGRFieldMotionFlow};
+    SGRPaletteRequest request = {NO};
     if (_motion == SGRFieldMotionWarp) [_warp setArtwork:image animated:animated];
-    if (_showsBackdrop && _motion == SGRFieldMotionNone) request.backdropSize = CGSizeMake(self.bounds.size.width > 0 ? self.bounds.size.width : 402, [self backdropHeightNow]);
     __weak SGRArtworkField *weakSelf = self;
     [SGRPalette paletteForImage:image request:request completion:^(SGRPalette *palette) {
         SGRArtworkField *field = weakSelf;
@@ -268,33 +237,6 @@ static NSDictionary *noActions(void) {
 
 - (void)applyPalette:(SGRPalette *)palette animated:(BOOL)animated {
     _read = YES;
-    if (_motion == SGRFieldMotionWarp) {
-        [self applyColor:_preferred ?: palette.fieldColor animated:animated];
-        [self didColor];
-        return;
-    }
-    if (_motion == SGRFieldMotionFlow && palette.flowColors) {
-        [_flow setColors:palette.flowColors animated:animated && !_flow.hidden];
-        _flow.hidden = NO;
-        [self updateMotion];
-        // Past the moving field's edges (the pull that dismisses the player) the colour under it goes on.
-        [self applyColor:_preferred ?: _flow.baseColor animated:animated];
-        [self didColor];
-        return;
-    }
-    if (_showsBackdrop && _motion == SGRFieldMotionNone && palette.backdrop) {
-        [CATransaction begin];
-        [CATransaction setDisableActions:YES];
-        if (animated) {
-            CATransition *fade = [CATransition animation];
-            fade.type = kCATransitionFade;
-            fade.duration = SGRCrossfade;
-            [_backdrop addAnimation:fade forKey:@"contents"];
-        }
-        _backdrop.contents = (__bridge id)palette.backdrop.CGImage;
-        _backdrop.hidden = NO;
-        [CATransaction commit];
-    }
     [self applyColor:_preferred ?: palette.fieldColor animated:animated];
     [self didColor];
 }

@@ -1,12 +1,14 @@
-// The redesign's rows on the Player page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m) and the Fluid artwork page
-// it opens (Redesigned/Player/PlayerBackgroundSettings.m), with the preview drawn by the Kit's renderer. The
-// launch line sets things up and then plays actions, one every 1.2 s from 1 s in; screenshot between them.
+// The redesign's rows on the Player page (Redesigned/NowPlayingBar/NowPlayingBarSettings.m), the Fluid artwork page
+// and Animated artwork's Sources page they open (Redesigned/Player/PlayerBackgroundSettings.m), with the preview
+// drawn by the Kit's renderer. The launch line sets things up and then plays actions, one every 1.2 s from 1 s in;
+// screenshot between them.
 //
 //     ./build.sh && xcrun simctl install <udid> build/KawarpHarness.app
 //     SIMCTL_CHILD_HARNESS_COVER=<picture> xcrun simctl launch <udid> com.vojta.kawarpharness [setup...] [action...]
 //
 // Setup: keep (the stored player keys stay; otherwise every spotifyglass.redesign.player key is cleared first),
-// old-off (the Moving background switch stored off, as an older build left it), style=<n>.
+// old-off (the Moving background switch stored off, as an older build left it), old=<n> (the Background an older
+// build stored: 0 Still artwork, 1 Colour flow, 2 Fluid artwork), style=<n> (0 Fluid artwork, 1 Animated artwork).
 // Actions: select=<section>.<row> (a tap on a row of the page on top), slide=<section>.<row>:<value> (that slider
 // dragged there and let go), pop, dump (the stored keys, what the player would read, and each section's rows).
 #import <UIKit/UIKit.h>
@@ -14,6 +16,7 @@
 #import "Settings/SGModPage.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Redesigned/Player/Player.h"
+#import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 
 static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     if ([root isKindOfClass:kind]) [found addObject:root];
@@ -38,6 +41,7 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     NSMutableArray<NSString *> *actions = [NSMutableArray array];
     for (NSString *arg in [args subarrayWithRange:NSMakeRange(1, args.count - 1)]) {
         if ([arg isEqualToString:@"old-off"]) [store setBool:NO forKey:SGRKeyPlayerMotionWas];
+        else if ([arg hasPrefix:@"old="]) [store setInteger:[arg substringFromIndex:4].integerValue forKey:SGRKeyPlayerBackgroundWas];
         else if ([arg hasPrefix:@"style="]) SGSetInt(SGRKeyPlayerBackground, [arg substringFromIndex:6].integerValue);
         else if (![arg isEqualToString:@"keep"]) [actions addObject:arg];
     }
@@ -96,8 +100,10 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
             if ([key hasPrefix:@"spotifyglass.redesign.player"]) NSLog(@"[harness] stored %@ = %@", key, all[key]);
         }
         SGRWarpLook look = SGRPlayerFluidLook();
-        NSLog(@"[harness] the player reads: background %ld, speed %.2f warp %.2f blur %.0f saturation %.2f brightness %.2f",
-              (long)SGRPlayerBackgroundStyle(), look.speed, look.warp, look.blur, look.saturation, look.brightness);
+        NSLog(@"[harness] the player reads: background %ld, speed %.2f warp %.2f blur %.0f saturation %.2f brightness %.2f, sources %@ "
+              "(the lock screen's %@)", (long)SGRPlayerBackgroundStyle(), look.speed, look.warp, look.blur, look.saturation, look.brightness,
+              [SGArtworkOrderFor(SGRKeyPlayerArtworkSources) componentsJoinedByString:@", "],
+              [SGArtworkOrderFor(SGKeyLockScreenArtworkSources) componentsJoinedByString:@", "]);
         for (NSInteger section = 0; section < table.numberOfSections; section++) {
             NSMutableArray<NSString *> *rows = [NSMutableArray array];
             for (NSInteger row = 0; row < [table numberOfRowsInSection:section]; row++) {

@@ -3,7 +3,8 @@
 // them: it shrinks the cover into a thumbnail at the top of the artwork band, lifts the track's title
 // up beside it, and fades the Apple Music style lines (Redesigned/Lyrics/SGRKaraokeView.h) into the
 // room that frees between the title and the progress bar. Tapping it again, or the thumbnail, puts the
-// cover back.
+// cover back. Over a clip (PlayerAnimated.x), where the player shows no cover, the thumbnail comes up and
+// goes where it sits instead.
 //
 // Nothing of Spotify's is taken apart for it. The cover is the Kit's now playing artwork drawn again
 // in a view of the redesign's own, flown from where Spotify's cover is drawn to where the thumbnail
@@ -74,6 +75,8 @@ static const NSTimeInterval kAloneAfter = 4;
 static const NSTimeInterval kAloneOut = 0.6, kAloneBack = 0.3;
 // Lighter than the Kit's glyph buttons: a picture dimmed to half reads as gone, not pressed.
 static const CGFloat kThumbPressScale = 0.94, kThumbPressAlpha = 0.8;
+// Over a clip the thumbnail grows in from this in its place, and shrinks back to it going.
+static const CGFloat kThumbAppearScale = 0.8;
 
 static char kOverlayKey, kPlateKey, kTitleKey, kWatcherKey;
 static BOOL sg_open;
@@ -559,15 +562,20 @@ static void setOpen(BOOL open, BOOL animated) {
     }
     sg_open = open;
     SGRPlayerLyricsChanged();
+    SGRPlayerAnimatedFollowLyrics(open, animated);
 
     SGRPlayerLyricsOverlay *overlay = overlayIn(host);
     if (!open) SGRSingControlDismiss(overlay);
     place(overlay, host, l);
     CGAffineTransform away = thumbTransform(l);
+    BOOL inPlace = SGRPlayerAnimatedShowing(NULL, NULL);
+    CGAffineTransform small = CGAffineTransformConcat(CGAffineTransformMakeScale(kThumbAppearScale, kThumbAppearScale), away);
+    CGAffineTransform full = inPlace ? small : CGAffineTransformIdentity;
     // The state it starts from, so the animation has both ends of every value and nothing jumps into it.
-    overlay.thumb.transform = open ? CGAffineTransformIdentity : away;
-    overlay.cover.layer.cornerRadius = thumbRadius(l, !open);
+    overlay.thumb.transform = open ? full : away;
+    overlay.cover.layer.cornerRadius = thumbRadius(l, inPlace || !open);
     if (open) {
+        overlay.thumb.alpha = inPlace ? 0 : 1;
         overlay.cover.image = SGRNowPlayingArtwork(NULL, NULL);
         overlay.stage.alpha = 0;
         overlay.stage.transform = CGAffineTransformMakeScale(kLyricsEnterScale, kLyricsEnterScale);
@@ -581,8 +589,9 @@ static void setOpen(BOOL open, BOOL animated) {
     }
 
     void (^move)(void) = ^{
-        overlay.thumb.transform = open ? away : CGAffineTransformIdentity;
-        overlay.cover.layer.cornerRadius = thumbRadius(l, open);
+        overlay.thumb.transform = open ? away : full;
+        if (inPlace) overlay.thumb.alpha = open ? 1 : 0;
+        overlay.cover.layer.cornerRadius = thumbRadius(l, inPlace || open);
         placeTitleRow(l);
         sg_floating.viewIfLoaded.alpha = open ? 0 : 1;
     };
@@ -612,8 +621,8 @@ static void setOpen(BOOL open, BOOL animated) {
                          animations:show completion:nil];
     }
     if (open) scheduleAlone();
-    SGLog(@"redesign player: lyrics %@, thumbnail %.0fx%.0f at %.0f,%.0f, title row up %.0f and right %.0f, lines %.0fx%.0f",
-          open ? @"up" : @"away", l.thumb.size.width, l.thumb.size.height, l.thumb.origin.x, l.thumb.origin.y,
+    SGLog(@"redesign player: lyrics %@%@, thumbnail %.0fx%.0f at %.0f,%.0f, title row up %.0f and right %.0f, lines %.0fx%.0f",
+          open ? @"up" : @"away", inPlace ? @" in place over a clip" : @"", l.thumb.size.width, l.thumb.size.height, l.thumb.origin.x, l.thumb.origin.y,
           -l.lift, l.shift, l.stage.size.width, l.stage.size.height);
 }
 
