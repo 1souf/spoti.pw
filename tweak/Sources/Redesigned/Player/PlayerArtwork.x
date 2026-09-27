@@ -7,9 +7,8 @@
 // corners and the scale: the tilt view's own transform is left to the tilt Spotify gives it when the
 // cover is inspected. The image clips, so the shadow is a plate of the Kit's behind it.
 //
-// The scale is identity while the player opens or closes: the bar morphs into a 354pt stand-in
-// (NowPlaying_ECMKit.MaskView, 01.txt:86) and the cover under it has to match where it lands. Once
-// the transition is over a paused cover springs down.
+// A paused cover stays shrunk while the player opens or closes: the morph (PlayerMorph.x) flies to the
+// frame the cover is seen at, so growing it for the transition only made it jump afterwards.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Player.h"
@@ -26,7 +25,7 @@ static NSMapTable<UIView *, UIView *> *sg_covers;
 
 static CGFloat currentScale(void) {
     SPTPlayerState *state = SGPlayerState();
-    if (!state.isPaused || SGRPlayerIsTransitioning()) return 1;
+    if (!state.isPaused) return 1;
     return SGRReduceMotion() ? kPausedScaleReduceMotion : kPausedScale;
 }
 
