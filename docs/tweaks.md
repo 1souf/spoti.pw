@@ -242,17 +242,17 @@ Redesigned:
                   system's own glass
     Playlist/     the playlist page (Liked Songs and one's own too, all three being the same page) the way the Music
                   app lays one out: the cover full bleed across the top dissolving into the page's field with no seam,
-                  the title, the creator and the length centred under it, one row of glass controls (shuffle, a
-                  prominent Play capsule taking its glyph and its word from Spotify's own button, add), the find bar
-                  and the curation pills gone, and the track rows on the field with a hairline between them
+                  the title, the creator after their picture and the length centred under it, one row of glass
+                  controls (shuffle, a prominent Play capsule taking its glyph and its word from Spotify's own button,
+                  add), the find bar and the curation pills gone, and the track rows on the field with a hairline between them
                   (Playlist.h lists its files). Sort and Mix, the two of those pills the ⋯ menu does not already offer,
                   are put on that menu's own sheet instead, above Spotify's rows, and fire Spotify's own buttons.
                   Laid out on the Mac against harness/playlist/
     Album/        the album page laid out the same way, on the page the Creative Work Platform builds rather than the
                   playlist's, so it shares nothing with Playlist/ but the Kit: the cover full bleed dissolving into the
-                  field, the title, the artist and the kind and date centred under it, and the same row of glass
-                  controls -- play and shuffle float over the album page outside its header, so they are concealed
-                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them. Under the tracks
+                  field, the title, the artist after their picture and the kind and date centred under it, and the
+                  same row of glass controls -- play and shuffle float over the album page outside its header, so they
+                  are concealed there and the row carries the Kit's stand-ins, which draw their glyph and fire them. Under the tracks
                   everything the server sends is dropped -- more by the artist, videos, concerts, merch, you might also
                   like, and whatever it adds next -- but the album's own line and its copyright (Album.h lists its
                   files). A podcast's episode page is the same template, so it is given the same field, and what it
