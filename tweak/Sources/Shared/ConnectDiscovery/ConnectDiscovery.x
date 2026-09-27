@@ -58,9 +58,10 @@ static void pruneInjectedPacketsLocked(CFTimeInterval now) {
     if (!sg_injectedPackets.count) atomic_store(&sg_injectedExpiryMs, 0);
 }
 
-// Called while sg_discoveryLock is held so a receive cannot overtake the record.
-static void rememberInjectedPacketLocked(int fd, const void *bytes, size_t length,
-                                          const struct sockaddr *source, socklen_t sourceLength) {
+// Called while sg_discoveryLock is held and before the send, so the receive hook's lock-free
+// expiry check already sees it when the reply lands.
+static NSDictionary *rememberInjectedPacketLocked(int fd, const void *bytes, size_t length,
+                                                  const struct sockaddr *source, socklen_t sourceLength) {
     NSDictionary *packet = @{
         @"bytes": [NSData dataWithBytes:bytes length:length],
         @"fd": @(fd),
@@ -71,6 +72,7 @@ static void rememberInjectedPacketLocked(int fd, const void *bytes, size_t lengt
     if (sg_injectedPackets.count == 64) [sg_injectedPackets removeObjectAtIndex:0];
     [sg_injectedPackets addObject:packet];
     atomic_store(&sg_injectedExpiryMs, nowMilliseconds() + 15000);
+    return packet;
 }
 
 static BOOL isLoopbackSource(const struct sockaddr *source, socklen_t length) {
@@ -302,9 +304,13 @@ static void injectResponse(SGBridgeRound *round, const void *bytes, size_t lengt
         loopbackLength = sizeof(*address);
     } else return;
     @synchronized (sg_discoveryLock) {
+        NSDictionary *packet = rememberInjectedPacketLocked(round.originalFD, bytes, length, source, sourceLength);
         ssize_t sent = sendto(round.retainedFD, bytes, length, 0, (struct sockaddr *)&loopback, loopbackLength);
-        if (sent != (ssize_t)length) return;
-        rememberInjectedPacketLocked(round.originalFD, bytes, length, source, sourceLength);
+        if (sent != (ssize_t)length) {
+            [sg_injectedPackets removeObjectIdenticalTo:packet];
+            if (!sg_injectedPackets.count) atomic_store(&sg_injectedExpiryMs, 0);
+            return;
+        }
     }
     SGLog(@"Connect discovery: sent %lu-byte loopback response from %@", (unsigned long)length, name);
 }
