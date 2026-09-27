@@ -7,6 +7,7 @@
 #import "About.h"
 #import "App/Onboarding/Onboarding.h"
 #import "App/Donate/Donate.h"
+#import "App/Sheet/SGCardSheet.h"
 
 static NSString *const kOfferURL = @"https://spoti.pw/api/certificate";
 static NSString *const kCertificateURL = @"https://spoti.pw/go/cert";
@@ -20,6 +21,7 @@ static const NSTimeInterval kDueWithin = 2 * kDay, kRest = 30 * kDay;
 static const NSTimeInterval kSettle = 30, kRetry = 5;
 static const NSInteger kTries = 24;
 static const NSUInteger kProfilesKept = 8;
+static const uint32_t kColor = 0x257BFE;
 
 static BOOL sg_offered;
 
@@ -110,11 +112,23 @@ static NSString *textIn(NSDictionary *offer, NSString *key) {
     return [value isKindOfClass:NSString.class] && [value length] ? value : nil;
 }
 
-// Anything but a 200 with show set, or a reply missing a piece, is no sheet this time.
-static void fetchOffer(void (^done)(NSDictionary *offer)) {
+static UIColor *colorIn(NSDictionary *offer) {
+    unsigned hex = kColor;
+    NSString *text = textIn(offer, @"color");
+    if ([text hasPrefix:@"#"] && text.length == 7) [[NSScanner scannerWithString:[text substringFromIndex:1]] scanHexInt:&hex];
+    return SGColorHex(hex, 1);
+}
+
+// Anything but a 200 with show set, or a reply missing a piece, is no sheet this time. The logo is
+// optional: without it the disc carries a glyph.
+static void fetchOffer(void (^done)(NSDictionary *offer, UIImage *logo)) {
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.timeoutIntervalForRequest = 10;
     NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+    void (^finish)(NSDictionary *, UIImage *) = ^(NSDictionary *offer, UIImage *logo) {
+        [session finishTasksAndInvalidate];
+        dispatch_async(dispatch_get_main_queue(), ^{ done(offer, logo); });
+    };
     NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:kOfferURL]
                                              cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
                                          timeoutInterval:10];
@@ -124,9 +138,12 @@ static void fetchOffer(void (^done)(NSDictionary *offer)) {
         NSDictionary *offer = [json isKindOfClass:NSDictionary.class] && [json[@"show"] isEqual:@YES] ? json : nil;
         if (offer && !(textIn(offer, @"title") && textIn(offer, @"message") && textIn(offer, @"action")
                        && [textIn(offer, @"url") hasPrefix:@"https://"])) offer = nil;
-        dispatch_async(dispatch_get_main_queue(), ^{ done(offer); });
+        NSString *image = textIn(offer, @"image");
+        if (![image hasPrefix:@"https://"]) return finish(offer, nil);
+        [[session dataTaskWithURL:[NSURL URLWithString:image] completionHandler:^(NSData *png, NSURLResponse *reply, NSError *failed) {
+            finish(offer, png ? [UIImage imageWithData:png scale:3] : nil);
+        }] resume];
     }] resume];
-    [session finishTasksAndInvalidate];
 }
 
 static BOOL screenBusy(UIViewController *top) {
@@ -134,20 +151,44 @@ static BOOL screenBusy(UIViewController *top) {
         || UIApplication.sharedApplication.applicationState != UIApplicationStateActive;
 }
 
-static void present(NSDictionary *offer, UIViewController *top) {
+static UIView *hero(UIImage *logo, UIColor *color) {
+    if (!logo) {
+        UIView *disc = SGCardSheetDisc([color colorWithAlphaComponent:0.8], color, color);
+        UIImageView *glyph = SGSymbolView(@"signature", 32, UIImageSymbolWeightSemibold, 80);
+        glyph.tintColor = UIColor.whiteColor;
+        glyph.frame = CGRectMake(0, 0, 80, 80);
+        [disc addSubview:glyph];
+        return disc;
+    }
+    UIView *disc = SGCardSheetDisc(UIColor.blackColor, UIColor.blackColor, color);
+    UIImageView *art = [[UIImageView alloc] initWithImage:logo];
+    art.frame = CGRectMake(0, 0, 80, 80);
+    art.contentMode = UIViewContentModeScaleAspectFill;
+    art.layer.cornerRadius = 40;
+    art.clipsToBounds = YES;
+    [disc addSubview:art];
+    return disc;
+}
+
+void SGShowCertificateSheet(NSDictionary *offer, UIImage *logo) {
     NSDate *expires = SGCertificateExpiry();
     NSString *day = expires ? dayOf(expires) : @"soon";
-    NSString *title = [textIn(offer, @"title") stringByReplacingOccurrencesOfString:@"{date}" withString:day];
-    NSString *message = [textIn(offer, @"message") stringByReplacingOccurrencesOfString:@"{date}" withString:day];
     NSString *url = textIn(offer, @"url");
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:title message:message
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [sheet addAction:[UIAlertAction actionWithTitle:textIn(offer, @"action") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIColor *color = colorIn(offer);
+    SGCardSheet *sheet = [SGCardSheet new];
+    sheet.color = color;
+    sheet.hero = hero(logo, color);
+    sheet.heading = [textIn(offer, @"title") stringByReplacingOccurrencesOfString:@"{date}" withString:day];
+    sheet.body = [textIn(offer, @"message") stringByReplacingOccurrencesOfString:@"{date}" withString:day];
+    sheet.note = textIn(offer, @"note");
+    sheet.actionTitle = textIn(offer, @"action");
+    sheet.actionSymbol = @"checkmark.seal.fill";
+    sheet.dismissTitle = textIn(offer, @"dismiss") ?: @"Not now";
+    sheet.action = ^{
         SGLog(@"certificate: sheet opened the link");
         SGOpenURL(url);
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:textIn(offer, @"dismiss") ?: @"Not now" style:UIAlertActionStyleCancel handler:nil]];
-    [top presentViewController:sheet animated:YES completion:nil];
+    };
+    [sheet present];
 }
 
 // Once a run at most, never in a run with the update notice or the donate sheet, and never over the
@@ -160,7 +201,7 @@ static void offerWhenClear(NSInteger tries) {
         return;
     }
     sg_offered = YES;
-    fetchOffer(^(NSDictionary *offer) {
+    fetchOffer(^(NSDictionary *offer, UIImage *logo) {
         UIViewController *top = SGTopController();
         if (!offer || screenBusy(top) || SGUpdateNoticeShown() || SGDonateShown()) {
             SGLog(@"certificate: sheet due, not shown (%@)", offer ? @"screen busy" : @"no offer from spoti.pw");
@@ -168,8 +209,8 @@ static void offerWhenClear(NSInteger tries) {
         }
         [NSUserDefaults.standardUserDefaults setDouble:NSDate.date.timeIntervalSince1970 forKey:kShownKey];
         SGDonateHoldOff();
-        present(offer, top);
-        SGLog(@"certificate: sheet shown, signature runs out %@", SGCertificateExpiry());
+        SGShowCertificateSheet(offer, logo);
+        SGLog(@"certificate: sheet shown%@, signature runs out %@", logo ? @"" : @" without the logo", SGCertificateExpiry());
     });
 }
 

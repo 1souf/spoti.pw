@@ -66,6 +66,7 @@ NSDate *SGCertificateExpiry(void);
 SGModRow *SGCertificateRow(void);    // nil unless signed with a free Apple ID
 void SGWatchForCertificate(void);
 BOOL SGCertificateOfferShown(void);  // this run, so the donate sheet stays out of its way
+void SGShowCertificateSheet(NSDictionary *offer, UIImage *logo);   // the sheet itself, for harness/donate too
 
 // Backup.m: the settings out to a JSON file through the share sheet, and back in from one, replacing
 // what is set and restarting.
