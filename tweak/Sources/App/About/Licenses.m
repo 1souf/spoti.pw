@@ -33,10 +33,12 @@ UIViewController *SGLicensesPage(void) {
     SGModRow *mod = SGLinkRow(@"spoti.pw", @"PolyForm Strict License 1.0.0", [SGRepoURL stringByAppendingString:@"/blob/main/LICENSE"]);
     SGModRow *bs2b = SGLinkRow(@"libbs2b", @"Crossfeed · MIT License", @"https://github.com/alexmarsev/libbs2b");
     SGModRow *wdl = SGLinkRow(@"WDL", @"Liveprog's EEL2 · zlib License", @"https://github.com/justinfrankel/WDL");
+    SGModRow *symbols = SGLinkRow(@"SFSymbols", @"The tab icons' names · MIT License", @"https://github.com/Rspoon3/SFSymbols");
     return [[SGModPage alloc] initWithTitle:@"Licenses" intro:@"The mod's own license, and the code from others it includes." sections:@[
         SGSection(nil, @[mod]),
         SGNotedSection(nil, @[bs2b], [@"Copyright (c) 2005 Boris Mikhaylov\n\n" stringByAppendingString:kMIT]),
         SGNotedSection(nil, @[wdl], [@"Copyright (C) 2004-2013 Cockos Incorporated\nCopyright (C) 1999-2003 Nullsoft, Inc.\n\n"
                                      stringByAppendingString:kZlib]),
+        SGNotedSection(nil, @[symbols], [@"Copyright (c) 2021 Richard Witherspoon\n\n" stringByAppendingString:kMIT]),
     ] footer:nil];
 }
