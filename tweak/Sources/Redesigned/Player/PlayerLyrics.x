@@ -2,7 +2,8 @@
 // is one screen and does not scroll (PlayerScroll.x), so the footer's lyrics glyph is the only way to
 // them: it shrinks the cover into a thumbnail at the top of the artwork band, lifts the track's title
 // up beside it, and fades the Apple Music style lines (Redesigned/Lyrics/SGRKaraokeView.h) into the
-// room that frees between the title and the progress bar. Tapping it again puts the cover back.
+// room that frees between the title and the progress bar. Tapping it again, or the thumbnail, puts the
+// cover back.
 //
 // Nothing of Spotify's is taken apart for it. The cover is the Kit's now playing artwork drawn again
 // in a view of the redesign's own, flown from where Spotify's cover is drawn to where the thumbnail
@@ -71,6 +72,8 @@ static const CGFloat kLivingHeight = 200;
 // nothing the eye waits for, and come back quickly, since a touch asked for them.
 static const NSTimeInterval kAloneAfter = 4;
 static const NSTimeInterval kAloneOut = 0.6, kAloneBack = 0.3;
+// Lighter than the Kit's glyph buttons: a picture dimmed to half reads as gone, not pressed.
+static const CGFloat kThumbPressScale = 0.94, kThumbPressAlpha = 0.8;
 
 static char kOverlayKey, kPlateKey, kTitleKey, kWatcherKey;
 static BOOL sg_open;
@@ -87,10 +90,61 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
 
 #pragma mark - the overlay
 
+// The thumbnail puts the cover back when tapped, the way the Music app's small artwork does. Its own
+// transform is the flight, so the press goes on the face inside it.
+@interface SGRPlayerLyricsThumb : UIControl
+@property (nonatomic, readonly) UIView *face;        // the cover and its shadow
+@end
+
+@implementation SGRPlayerLyricsThumb {
+    UIView *_face;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    _face = [[UIView alloc] initWithFrame:self.bounds];
+    _face.userInteractionEnabled = NO;
+    [self addSubview:_face];
+    self.isAccessibilityElement = YES;
+    self.accessibilityLabel = @"Hide lyrics";
+    self.accessibilityTraits = UIAccessibilityTraitButton;
+    [self addTarget:self action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
+    return self;
+}
+
+- (UIView *)face { return _face; }
+
+- (void)tapped {
+    SGLog(@"redesign player: the thumbnail tapped, the cover goes back");
+    SGRPlayerToggleLyrics();
+}
+
+// VoiceOver's double tap, which reaches a UIControl of one's own no other way.
+- (BOOL)accessibilityActivate {
+    [self tapped];
+    return YES;
+}
+
+// Only while it sits there with the controls: in flight, or faded out with them, a touch is not for it.
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    return sg_open && !sg_alone && !sg_moving && [super pointInside:point withEvent:event];
+}
+
+- (void)setHighlighted:(BOOL)highlighted {
+    [super setHighlighted:highlighted];
+    UIView *face = _face;
+    SGRAnimate(SGRMotionPress, ^{
+        face.alpha = highlighted ? kThumbPressAlpha : 1;
+        face.transform = highlighted ? CGAffineTransformMakeScale(kThumbPressScale, kThumbPressScale) : CGAffineTransformIdentity;
+    }, nil);
+}
+
+@end
+
 // The thumbnail and the lines, side by side under one view so the lines' own view has no sibling of
 // ours to hide: SGRKaraokeView takes the whole of whatever it is put in and dims what is next to it.
 @interface SGRPlayerLyricsOverlay : UIView
-@property (nonatomic, readonly) UIView *thumb;       // the cover, at full size, moved by its transform
+@property (nonatomic, readonly) SGRPlayerLyricsThumb *thumb;   // the cover, at full size, moved by its transform
 @property (nonatomic, readonly) UIImageView *cover;
 @property (nonatomic, readonly) UIView *stage;       // holds the lines' view alone
 @property (nonatomic, readonly) UILabel *empty;      // Sing's "no lyrics"
@@ -98,7 +152,8 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
 @end
 
 @implementation SGRPlayerLyricsOverlay {
-    UIView *_thumb, *_stage;
+    SGRPlayerLyricsThumb *_thumb;
+    UIView *_stage;
     UIImageView *_cover;
     UILabel *_empty;
     SGRKaraokeView *_lyrics;
@@ -106,14 +161,13 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    _thumb = [[UIView alloc] initWithFrame:CGRectZero];
-    _thumb.userInteractionEnabled = NO;
+    _thumb = [[SGRPlayerLyricsThumb alloc] initWithFrame:CGRectZero];
     _cover = [[UIImageView alloc] initWithFrame:CGRectZero];
     _cover.contentMode = UIViewContentModeScaleAspectFill;
     _cover.clipsToBounds = YES;
     _cover.layer.cornerCurve = kCACornerCurveContinuous;
     _cover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [_thumb addSubview:_cover];
+    [_thumb.face addSubview:_cover];
     _stage = [[UIView alloc] initWithFrame:CGRectZero];
     // What the lines leave when a song has none, which only Sing opens them for. A sibling of the lines'
     // view, so it goes whenever they have something to show (SGRKaraokeView's syncSiblings).
@@ -130,13 +184,13 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
     return self;
 }
 
-- (UIView *)thumb { return _thumb; }
+- (SGRPlayerLyricsThumb *)thumb { return _thumb; }
 - (UIImageView *)cover { return _cover; }
 - (UIView *)stage { return _stage; }
 - (UILabel *)empty { return _empty; }
 
-// The lines seek when they are tapped and the thumbnail takes no touches, so everywhere else the
-// overlay would only swallow them: a view that takes touches does, even with nothing on it.
+// The lines seek when they are tapped and the thumbnail puts the cover back, so everywhere else the
+// overlay would only swallow touches: a view that takes touches does, even with nothing on it.
 //
 // What it hands them to instead is the title row. Translated to the top of the player it is drawn well
 // outside the stack view it is arranged in, and UIKit stops looking at a view whose bounds the touch is
@@ -449,10 +503,14 @@ static void place(SGRPlayerLyricsOverlay *overlay, UIView *host, SGRLyricsLayout
     CGRect cover = [overlay convertRect:l.cover fromView:host], stage = [overlay convertRect:l.room fromView:host];
     overlay.thumb.bounds = (CGRect){CGPointZero, cover.size};
     overlay.thumb.center = CGPointMake(CGRectGetMidX(cover), CGRectGetMidY(cover));
-    overlay.cover.frame = overlay.thumb.bounds;
-    SGRShadowPlate *plate = SGRShadowPlateIn(overlay.thumb, &kPlateKey);
-    plate.bounds = overlay.thumb.bounds;
-    plate.center = CGPointMake(CGRectGetMidX(overlay.thumb.bounds), CGRectGetMidY(overlay.thumb.bounds));
+    UIView *face = overlay.thumb.face;
+    CGPoint middle = CGPointMake(CGRectGetMidX(overlay.thumb.bounds), CGRectGetMidY(overlay.thumb.bounds));
+    face.bounds = overlay.thumb.bounds;
+    face.center = middle;
+    overlay.cover.frame = face.bounds;
+    SGRShadowPlate *plate = SGRShadowPlateIn(face, &kPlateKey);
+    plate.bounds = face.bounds;
+    plate.center = middle;
     overlay.stage.bounds = (CGRect){CGPointZero, stage.size};
     overlay.stage.center = CGPointMake(CGRectGetMidX(stage), CGRectGetMidY(stage));
     overlay.empty.frame = UIEdgeInsetsInsetRect(overlay.stage.bounds, bandOf(l, NO));
