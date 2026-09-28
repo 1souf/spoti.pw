@@ -61,7 +61,9 @@ Rules:
 - Device log: `make log` (`[spotifyglass]` lines).
 - Releases: Release Please (`.github/workflows/release.yml`). Commit as `feat:` / `fix:` (they bump
   `version.txt` and fill `CHANGELOG.md`; `chore:`, `refactor:` and `docs:` stay out). Merging its
-  release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand.
+  release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand. `beta` releases
+  `vX.Y.Z-beta.N` pre-releases the same way (`release-please-config.beta.json`); only beta builds are
+  offered them. When `beta` merges into `main`, keep `main`'s `version.txt`.
 - Moving to a new Spotify version: change `SGSupportedSpotifyVersion` in `Settings/SGPageStyle.m`. Any
   other version gets the "isn't supported" alert and red row (`App/About/Compatibility.m`), so a bump
   without it warns everyone. Update the README (badge and text), `.github/ISSUE_TEMPLATE/bug_report.yml`,
