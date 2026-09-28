@@ -143,6 +143,18 @@
 - (UIView *)tabBarView { return self.bar; }
 - (void)setSelectedViewController:(UIViewController *)controller {}
 
+// Spotify lights the tab it switches to and dims the rest; Create only opens its menu.
+- (void)tabTapped:(UITapGestureRecognizer *)tap {
+    UIView *tapped = tap.view;
+    UILabel *label = tapped.subviews.lastObject;
+    NSLog(@"[harness] Spotify's %@ tab was tapped", label.text);
+    if ([tapped isKindOfClass:_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class]) return;
+    for (UIView *item in ((UIStackView *)tapped.superview).arrangedSubviews) {
+        ((UILabel *)item.subviews.lastObject).textColor = item == tapped ? UIColor.whiteColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1];
+        [item setNeedsLayout];
+    }
+}
+
 static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *item = [cls new];
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
@@ -186,12 +198,15 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *compact = [_TtC23NavigationUI_TabBarImpl17TabBarCompactView new];
     compact.translatesAutoresizingMaskIntoConstraints = NO;
     [self.bar addSubview:compact];
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[
+    NSMutableArray<UIView *> *items = [NSMutableArray arrayWithObjects:
         item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Home", @"house.fill", YES),
         item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Search", @"magnifyingglass", NO),
-        item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Your Library", @"books.vertical", NO),
-        item(_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class, @"Create", @"plus", NO),
-    ]];
+        item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Your Library", @"books.vertical", NO), nil];
+    // `library-last`: no Create, so Your Library ends the row.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"library-last"])
+        [items addObject:item(_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class, @"Create", @"plus", NO)];
+    for (UIView *tab in items) [tab addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tabTapped:)]];
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:items];
     row.distribution = UIStackViewDistributionFillEqually;
     row.accessibilityIdentifier = @"tabs-container-view-identifier";
     row.translatesAutoresizingMaskIntoConstraints = NO;

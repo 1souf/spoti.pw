@@ -13,6 +13,8 @@ __weak UIView *sgr_artistRoot = nil;
 void SGRComposeTabBar(UIView *tabBar) {}
 void SGRLogTabBarRow(UIView *tabBar) {}
 void SGOpenModSettings(UIView *source) {}
+UIView *SGRCurrentModTab(void) { return nil; }
+void SGRTabPicked(UIView *item) {}
 
 #pragma mark - a player for the mini player (`inline`)
 

@@ -478,7 +478,7 @@ static void syncBar(UIView *stockBar) {
 
 // With the mini player on (SGRKeyInlinePlayer), the glass bar is a UITabBarController's instead, since
 // the bottom accessory and minimizing on scroll are the controller's: UIKit then draws the mini player
-// above the bar and, scrolled, moves it in between the selected tab and Search, all of it its own
+// above the bar and, scrolled, moves it in between the first tab and the last, all of it its own
 // morph. The controller's pages are empty and clear; Spotify's pages stay where they are, under it.
 //
 // Minimizing needs no private API: UIKit watches the scroll view the selected page names for its
@@ -504,6 +504,10 @@ static void syncBar(UIView *stockBar) {
 @property (nonatomic, copy) NSArray<UIView *> *sources;
 @property (nonatomic, strong) UITabAccessory *accessory API_AVAILABLE(ios(26.0));
 @property (nonatomic) BOOL holding;
+@property (nonatomic, readonly) BOOL minimized;
+// The last touch on the bar went down on the minimized leading tab, and its tap went to the first tab
+// while UIKit selects the one under it.
+@property (nonatomic) BOOL touchedLead, leadRedirected;
 @end
 
 static __weak SGRInlineTabs *sg_inlineTabs;
@@ -580,6 +584,7 @@ static void nameScrollView(void) {
     if (@available(iOS 26.0, *)) {
         self.tabBarMinimizeBehavior = UITabBarMinimizeBehaviorOnScrollDown;
         self.accessory = [[UITabAccessory alloc] initWithContentView:SGRMakeMiniPlayer()];
+        [self.accessory.contentView registerForTraitChanges:@[UITraitTabAccessoryEnvironment.class] withTarget:self action:@selector(minimizedChanged)];
     }
     SGAddPlayerStateObserver(self);
     // Setting the controller up above can load its view, so viewDidLoad may have run with no accessory yet.
@@ -593,7 +598,34 @@ static void nameScrollView(void) {
     UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)];
     hold.delegate = self;
     [self.tabBar addGestureRecognizer:hold];
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(leadingTapped:)];
+    tap.delegate = self;
+    tap.cancelsTouchesInView = NO;
+    [self.tabBar addGestureRecognizer:tap];
     [self playerStateDidChange:SGPlayerState()];
+}
+
+// The accessory is inline beside the minimized bar; with no track there is no accessory and no telling.
+- (BOOL)minimized {
+    if (@available(iOS 26.0, *)) return self.bottomAccessory.contentView.traitCollection.tabAccessoryEnvironment == UITabAccessoryEnvironmentInline;
+    return NO;
+}
+
+- (void)minimizedChanged {
+    SGLog(@"tab bar: %@", self.minimized ? @"minimized" : @"expanded");
+    if (self.stockBar) syncBar(self.stockBar);
+}
+
+// Between the first tab and the trailing circle.
+- (BOOL)isMiddle:(NSUInteger)index {
+    return index > 0 && index + 1 < self.sources.count;
+}
+
+// A tap on the minimized selected tab only expands the bar, with no shouldSelectTab.
+- (void)leadingTapped:(UITapGestureRecognizer *)tap {
+    SGLog(@"tab bar: the minimized leading tab takes the tap for %@", labelIn(self.sources.firstObject).text);
+    SGRTabPicked(self.sources.firstObject);
+    forwardTap(self.sources.firstObject);
 }
 
 // The mini player is there while Spotify has a track to show on its bar, paused or not.
@@ -608,6 +640,8 @@ static void nameScrollView(void) {
 - (BOOL)tabBarController:(UITabBarController *)controller shouldSelectTab:(UITab *)tab API_AVAILABLE(ios(26.0)) {
     if (sg_flipping) return YES;
     NSUInteger index = [self.tabs indexOfObject:tab];
+    self.leadRedirected = self.touchedLead && [self isMiddle:index];
+    if (self.leadRedirected) index = 0;
     if (index < self.sources.count) SGRTabPicked(self.sources[index]);
     // Home tapped while on Home pops Spotify's stack, which would take Mod Settings straight off it.
     if (index < self.sources.count && !self.holding) forwardTap(self.sources[index]);
@@ -619,17 +653,34 @@ static void nameScrollView(void) {
 }
 
 - (void)tabBarController:(UITabBarController *)controller didSelectTab:(UITab *)tab previousTab:(UITab *)previous API_AVAILABLE(ios(26.0)) {
+    // Selecting another tab in here leaves UIKit lighting this one.
+    if (self.leadRedirected) {
+        self.leadRedirected = NO;
+        dispatch_async(dispatch_get_main_queue(), ^{ self.selectedTab = self.tabs.firstObject; });
+    }
     nameScrollView();
 }
 
 // Held on Home, Mod Settings, as on the other glass bar.
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)recognizer {
+    if ([recognizer isKindOfClass:UITapGestureRecognizer.class]) return YES;
     UIView *home = self.sources.firstObject;
     if (!home || !isHome(home, self.stockBar)) return NO;
     UITabBarItem *item = itemAtPoint(self.tabBar, [recognizer locationInView:self.tabBar]);
     NSString *title = labelIn(home).text;
     if (item && title.length && [item.title isEqualToString:title]) return YES;
     if (@available(iOS 26.0, *)) return item && self.tabs.count && item.image == self.tabs.firstObject.image;
+    return NO;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+    if (![recognizer isKindOfClass:UITapGestureRecognizer.class]) return YES;
+    self.touchedLead = NO;
+    if (@available(iOS 26.0, *)) {
+        UIView *mini = self.minimized ? self.bottomAccessory.contentView : nil;
+        self.touchedLead = mini.window && [touch locationInView:nil].x < CGRectGetMinX([mini convertRect:mini.bounds toView:nil]);
+        return self.touchedLead && [self isMiddle:[self.tabs indexOfObject:self.selectedTab]];
+    }
     return NO;
 }
 
@@ -650,16 +701,6 @@ static void nameScrollView(void) {
 }
 
 @end
-
-// Spotify's Search tab, when it is the last tab, becomes UIKit's search tab, the one that stays beside
-// the minimized bar. Encore names its icon "search"; a label is the fallback.
-static BOOL isSearch(UIView *item) {
-    UIView *live = iconIn(item);
-    id icon = live ? encoreIconOf(live) : nil;
-    NSString *name = [icon respondsToSelector:@selector(name)] ? [icon name] : nil;
-    if (name) return [name.lowercaseString containsString:@"search"];
-    return [labelIn(item).text.lowercaseString containsString:@"search"];
-}
 
 static UIViewController *inlinePage(UITab *tab) API_AVAILABLE(ios(26.0)) {
     return [SGRInlinePage new];
@@ -720,15 +761,15 @@ static void syncInline(UIView *stockBar) API_AVAILABLE(ios(26.0)) {
 
     if (![sources isEqualToArray:tabs.sources]) {
         NSMutableArray<UITab *> *list = [NSMutableArray array];
-        BOOL searchTaken = NO;
         for (UIView *source in sources) {
             NSString *title = hideLabels ? @"" : (labelIn(source).text ?: @"");
             UITab *tab;
-            // UIKit puts a search tab in the circle at the trailing end whatever the order, so Search is one
-            // only where the Navbar order already has it last; anywhere else it stays a tab where it was put.
-            if (!searchTaken && source == sources.lastObject && isSearch(source)) {
-                searchTaken = YES;
+            // UIKit keeps a search tab in its own circle beside the minimized bar, so the last tab of the
+            // Navbar order is one, whichever it is.
+            if (sources.count > 1 && source == sources.lastObject) {
                 UISearchTab *search = [[UISearchTab alloc] initWithViewControllerProvider:^UIViewController *(UITab *t) { return inlinePage(t); }];
+                search.title = title;
+                search.image = glyphOf(source, NO);
                 search.automaticallyActivatesSearch = NO;
                 tab = search;
             } else {
@@ -740,21 +781,29 @@ static void syncInline(UIView *stockBar) API_AVAILABLE(ios(26.0)) {
         }
         tabs.sources = sources;
         tabs.tabs = list;
-        SGLog(@"tab bar: %lu tabs on the mini player's bar, Search %@", (unsigned long)list.count, searchTaken ? @"pinned" : @"in the order or not found");
+        SGLog(@"tab bar: %lu tabs on the mini player's bar, %@ in the trailing circle", (unsigned long)list.count, labelIn(sources.lastObject).text);
     }
 
     // Spotify's selected tab shows its filled icon, as UITabBarItem's selectedImage did on the other bar.
+    // Minimized, UIKit leads with the selected tab, or with the last one picked while the trailing one is
+    // selected. The middle tabs all wear the first tab's glyph, unlit, so the first is what leads.
     UITab *selected = nil;
     UIView *current = SGRCurrentModTab();
     NSUInteger modTab = current ? [sources indexOfObject:current] : NSNotFound;
     BOOL missing = NO;
+    static UIImage *leadFrom, *lead;
+    UIImage *leadGlyph = tabs.minimized ? glyphOf(sources.firstObject, NO) : nil;
+    if (leadGlyph != leadFrom) {
+        leadFrom = leadGlyph;
+        lead = [leadGlyph imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+    }
     for (NSUInteger i = 0; i < sources.count && i < tabs.tabs.count; i++) {
         UITab *tab = tabs.tabs[i];
         BOOL active = modTab != NSNotFound ? i == modTab : isActive(sources[i]);
         if (active && !selected) selected = tab;
-        if ([tab isKindOfClass:UISearchTab.class]) continue;
         UIImage *image = glyphOf(sources[i], active);
         missing |= !image;
+        if (lead && [tabs isMiddle:i]) image = lead;
         if (image && tab.image != image) tab.image = image;
     }
     if (selected && tabs.selectedTab != selected) {
