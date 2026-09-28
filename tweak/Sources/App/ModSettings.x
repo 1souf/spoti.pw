@@ -40,11 +40,9 @@ static UIViewController *modSettingsPage(void) {
     // Opening the page is the only thing that asks; the cache keeps it to once every six hours.
     SGCheckForUpdate(NO);
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
-    // What no switch can put right leads the page, above the tweaks: a Spotify the mod isn't made for,
-    // a build the lock screen cannot open.
-    NSMutableArray<SGModRow *> *warnings = [NSMutableArray array];
-    SGModRow *version = SGSpotifyVersionWarningRow();
-    if (version) [warnings addObject:version];
+    // What no switch can put right leads the page, above the tweaks: a Spotify or a second mod it isn't
+    // made for, a build the lock screen cannot open.
+    NSMutableArray<SGModRow *> *warnings = [NSMutableArray arrayWithArray:SGCompatibilityWarningRows()];
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [warnings addObject:signing];
     if (warnings.count) [sections addObject:SGSection(nil, warnings)];
@@ -269,7 +267,7 @@ static BOOL isSettingsRoot(UIViewController *list) {
     %init;
     SGRequireClasses(@[@"_TtC21Settings_PlatformImpl26SettingsListViewController", @"_TtC23SideDrawer_ListPageImpl18ListViewController"]);
     SGRegisterPages();
-    SGCheckSpotifyVersionOnce();
+    SGCheckCompatibilityOnce();
     SGCheckSigningOnce();
     SGWatchForUpdates();
     SGWatchForDonate();

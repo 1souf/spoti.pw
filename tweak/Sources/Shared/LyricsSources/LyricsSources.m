@@ -225,7 +225,7 @@ BOOL SGLyricsEnabled(void) {
 static NSString *const kEeveeLyricsSource = @"lyricsSource";
 static const NSInteger kEeveeNotReplaced = 4;
 
-static BOOL eeveeLoaded(void) {
+BOOL SGEeveeLoaded(void) {
     static BOOL loaded;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -240,7 +240,7 @@ static BOOL eeveeLoaded(void) {
 }
 
 BOOL SGLyricsEeveeReplaces(void) {
-    if (!eeveeLoaded()) return NO;
+    if (!SGEeveeLoaded()) return NO;
     id source = [NSUserDefaults.standardUserDefaults objectForKey:kEeveeLyricsSource];
     return ![source respondsToSelector:@selector(integerValue)] || [source integerValue] != kEeveeNotReplaced;
 }

@@ -86,6 +86,7 @@ SGLyricsProvider *SGLyricsProviderFor(NSString *key);
 NSArray<NSString *> *SGLyricsOrder(void);
 void SGLyricsSetOrder(NSArray<NSString *> *keys);
 BOOL SGLyricsEnabled(void);   // any source at all is on
+BOOL SGEeveeLoaded(void);   // EeveeSpotify injected at all, found by its classes or a dylib named for it
 // EeveeSpotify injected with its own lyrics on. It answers color-lyrics in the same delegate calls with a
 // fetch that blocks the calling thread, and LyricsHook makes those calls from the main queue.
 BOOL SGLyricsEeveeReplaces(void);
