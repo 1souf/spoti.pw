@@ -40,13 +40,18 @@ static UIViewController *modSettingsPage(void) {
     // Opening the page is the only thing that asks; the cache keeps it to once every six hours.
     SGCheckForUpdate(NO);
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
-    // A build the lock screen cannot open leads the page, above the tweaks: it is the one thing here
-    // that no switch can put right, and it is worth reading before anything else.
+    // What no switch can put right leads the page, above the tweaks: a Spotify or a second mod it isn't
+    // made for, a build the lock screen cannot open.
+    NSMutableArray<SGModRow *> *warnings = [NSMutableArray arrayWithArray:SGCompatibilityWarningRows()];
     SGModRow *signing = SGSigningWarningRow();
-    if (signing) [sections addObject:SGSection(nil, @[signing])];
+    if (signing) [warnings addObject:signing];
+    if (warnings.count) [sections addObject:SGSection(nil, warnings)];
     SGModRow *discord = SGWithSymbol(SGLinkRow(@"Join the Discord", @"Release pings, help and previews", SGDiscordURL), @"bubble.left.and.bubble.right.fill");
     discord.color = SGDiscordColor();
-    [sections addObject:SGSection(nil, @[SGDonateRow(), discord])];
+    NSMutableArray<SGModRow *> *support = [NSMutableArray arrayWithObjects:SGDonateRow(), discord, nil];
+    SGModRow *certificate = SGCertificateRow();
+    if (certificate) [support addObject:certificate];
+    [sections addObject:SGSection(nil, support)];
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
     // The audio effects work on the sound, so both looks have them, with what they are doing beside the chevron.
@@ -235,16 +240,24 @@ static BOOL isSettingsRoot(UIViewController *list) {
 
 // The drawer's list (trees/test6.txt: SideDrawerListCollectionView under the profile header, Your
 // plan its first cell) is one of several collection views on the page, so it is found by name.
+static SGModSettingsRow *ensureDrawerRow(UICollectionView *list) {
+    SGModSettingsRow *row = objc_getAssociatedObject(list, &kRowKey);
+    if (!row) {
+        row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
+        row.drawer = YES;
+        objc_setAssociatedObject(list, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    // Spotify can rebuild the collection view's children while keeping the collection view itself.
+    if (row.superview != list) [list addSubview:row];
+    return row;
+}
+
 %hook _TtC23SideDrawer_ListPageImpl18ListViewController
 - (void)viewDidLayoutSubviews {
     %orig;
     SGForEachView(((UIViewController *)self).view, ^(UIView *v) {
         if (![v isKindOfClass:UICollectionView.class] || ![NSStringFromClass(v.class) containsString:@"SideDrawerListCollectionView"]) return;
-        if (objc_getAssociatedObject(v, &kRowKey)) return;
-        SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
-        row.drawer = YES;
-        objc_setAssociatedObject(v, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [v addSubview:row];
+        ensureDrawerRow((UICollectionView *)v);
     });
 }
 %end
@@ -254,6 +267,11 @@ static BOOL isSettingsRoot(UIViewController *list) {
 - (void)layoutSubviews {
     %orig;
     SGModSettingsRow *row = objc_getAssociatedObject(self, &kRowKey);
+    // The drawer sometimes populates its list after its controller's layout callback.
+    if (!row && [NSStringFromClass(self.class) containsString:@"SideDrawerListCollectionView"])
+        row = ensureDrawerRow(self);
+    else if (row && row.superview != self)
+        [self addSubview:row];
     if (row) placeRow(self, row);
 }
 %end
@@ -262,7 +280,9 @@ static BOOL isSettingsRoot(UIViewController *list) {
     %init;
     SGRequireClasses(@[@"_TtC21Settings_PlatformImpl26SettingsListViewController", @"_TtC23SideDrawer_ListPageImpl18ListViewController"]);
     SGRegisterPages();
+    SGCheckCompatibilityOnce();
     SGCheckSigningOnce();
     SGWatchForUpdates();
     SGWatchForDonate();
+    SGWatchForCertificate();
 }
