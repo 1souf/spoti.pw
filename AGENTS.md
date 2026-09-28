@@ -62,6 +62,11 @@ Rules:
 - Releases: Release Please (`.github/workflows/release.yml`). Commit as `feat:` / `fix:` (they bump
   `version.txt` and fill `CHANGELOG.md`; `chore:`, `refactor:` and `docs:` stay out). Merging its
   release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand.
+- Moving to a new Spotify version: change `SGSupportedSpotifyVersion` in `Settings/SGPageStyle.m`. Any
+  other version gets the "isn't supported" alert and red row (`App/About/SpotifyVersion.m`), so a bump
+  without it warns everyone. Update the README (badge and text), `.github/ISSUE_TEMPLATE/bug_report.yml`,
+  the iOS floor above and the web's `content/site.ts` with it. `Shared/Audio/SGAudioSourceQueue.m` pins
+  the 9.1.78 binary by UUID and offsets and stands down on any other until they are read off again.
 - Known traps: anything pushed onto Spotify's nav stack must conform to `SPTPageController`
   (`Settings/SGPage.m`). Setting `hidden` on views inside Spotify's `OverflowStackView` or its Encore
   stacks crashes, so use alpha. A `CADisplayLink` capped at 60 Hz drags the player's 120 Hz
