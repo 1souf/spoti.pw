@@ -32,6 +32,8 @@ void SGRRefreshTabBar(void);
 // in place of Spotify's tab; nil once the page is popped or SGRTabPicked is told of one of Spotify's.
 UIView *SGRCurrentModTab(void);
 void SGRTabPicked(UIView *item);
+// TabBar.x: calls what the tap recognizers on `view` itself call, the way a real tap ends; NO when none did.
+BOOL SGRFireTapRecognizers(UIView *view);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings
 UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone, for the welcome tour
