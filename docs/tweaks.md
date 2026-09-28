@@ -117,6 +117,13 @@ Shared:
                   own; a search or a download both ask for at once is made once and answers both. Checked on
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
+    ConnectDiscovery/  Bonjour resolves local Spotify Connect receivers. When Spotify's own mDNS send
+                  fails without the multicast entitlement, a bounded round sends its query by IPv4/IPv6
+                  unicast to all resolved receivers and replays validated replies to Spotify's socket.
+                  A short wait also catches receivers still resolving. Connected sockets are left alone.
+                  The IPA declares Connect and Google Cast Bonjour service types; pipeline.sh keeps the
+                  IPA's existing types. This bridge handles Connect only; Cast is Bonjour-declared but
+                  has no equivalent packet bridge here.
     Audio/        the mixer connection and RemoteIO render notify owned once (SGAudioPipeline.x): fixed processor slots
                   run speed and pitch, audio effects, then music haptics. Spotify keeps an output chain per sample rate
                   (a local file at another rate gets its own), so each RemoteIO pulls only its own mixer and the

@@ -240,16 +240,24 @@ static BOOL isSettingsRoot(UIViewController *list) {
 
 // The drawer's list (trees/test6.txt: SideDrawerListCollectionView under the profile header, Your
 // plan its first cell) is one of several collection views on the page, so it is found by name.
+static SGModSettingsRow *ensureDrawerRow(UICollectionView *list) {
+    SGModSettingsRow *row = objc_getAssociatedObject(list, &kRowKey);
+    if (!row) {
+        row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
+        row.drawer = YES;
+        objc_setAssociatedObject(list, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    // Spotify can rebuild the collection view's children while keeping the collection view itself.
+    if (row.superview != list) [list addSubview:row];
+    return row;
+}
+
 %hook _TtC23SideDrawer_ListPageImpl18ListViewController
 - (void)viewDidLayoutSubviews {
     %orig;
     SGForEachView(((UIViewController *)self).view, ^(UIView *v) {
         if (![v isKindOfClass:UICollectionView.class] || ![NSStringFromClass(v.class) containsString:@"SideDrawerListCollectionView"]) return;
-        if (objc_getAssociatedObject(v, &kRowKey)) return;
-        SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
-        row.drawer = YES;
-        objc_setAssociatedObject(v, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [v addSubview:row];
+        ensureDrawerRow((UICollectionView *)v);
     });
 }
 %end
@@ -259,6 +267,11 @@ static BOOL isSettingsRoot(UIViewController *list) {
 - (void)layoutSubviews {
     %orig;
     SGModSettingsRow *row = objc_getAssociatedObject(self, &kRowKey);
+    // The drawer sometimes populates its list after its controller's layout callback.
+    if (!row && [NSStringFromClass(self.class) containsString:@"SideDrawerListCollectionView"])
+        row = ensureDrawerRow(self);
+    else if (row && row.superview != self)
+        [self addSubview:row];
     if (row) placeRow(self, row);
 }
 %end
