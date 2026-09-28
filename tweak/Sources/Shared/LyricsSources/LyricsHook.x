@@ -131,9 +131,13 @@ static NSData *pageBody(SGLyricsResult *chain, NSData *colours) {
     NSMutableArray<SGPBField *> *lyrics = [NSMutableArray array];
     if (chain.synced) [lyrics addObject:SGPBVarint(1, 1)];
     NSArray<NSNumber *> *starts = chain.starts;
+    // Spotify's page traps on a line starting before the one above it, and a duet's TTML lists its
+    // voices in reading order, not singing order: such a line starts with the one above.
+    __block NSInteger latest = 0;
     [chain.texts enumerateObjectsUsingBlock:^(NSString *text, NSUInteger i, BOOL *stop) {
-        NSInteger start = i < starts.count ? [starts[i] integerValue] : 0;
-        NSData *line = SGPBSerialize(@[SGPBVarint(1, (uint64_t)MAX(start, 0)),
+        NSInteger start = MAX(i < starts.count ? [starts[i] integerValue] : 0, latest);
+        latest = start;
+        NSData *line = SGPBSerialize(@[SGPBVarint(1, (uint64_t)start),
                                        SGPBString(2, [text isKindOfClass:NSString.class] ? text : @"")]);
         [lyrics addObject:SGPBBytes(2, line)];
     }];
