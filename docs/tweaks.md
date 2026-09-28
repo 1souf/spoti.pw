@@ -344,10 +344,10 @@ header, slider and sticky header flags, the cards under the player and the lyric
 buttons to hide); in the redesign instead, right on the Player page, its device button and the Background behind the player: Fluid
 artwork, the default, the cover itself Kawase blurred and warped on Metal, ported from kawarp (Redesigned/Kit/SGRWarp.m), or Animated
 artwork, the track's Canvas or the album's Apple Music 3:4 cover looping muted over it (Redesigned/Player/PlayerAnimated.x), the square cover fading out as it fades in and back as it goes, found
-the lock screen's way in an order of its own (a Sources page shown while it is picked) and falling back to Fluid artwork for a track
+the lock screen's way in an order of its own (a Sources page) and falling back to Fluid artwork for a track
 without a clip, while one is fetched, while Spotify shows its own music video, and in Low Power Mode or with Reduce Motion on; the
-choice applies at once. The Fluid artwork page has a live preview over Speed, Warp, Blur, Saturation and Brightness, which the
-player follows as they move, and Reset; laid out against harness/kawarp/, the player's side against harness/player/ (its fluid and
+choice is picked in place, applies at once and brings its own settings up under it: for Fluid artwork a live preview over Speed,
+Warp, Blur, Saturation and Brightness, which the player follows as they move, and Reset; for Animated artwork its Sources; laid out against harness/kawarp/, the player's side against harness/player/ (its fluid and
 animated scenarios). Then Vibrations under either look, a card for
 Controls (on until switched off) and one for Music Haptics (off until switched on, with an ⓘ saying it
 follows the sound this iPhone plays while Spotify is open), each opening out while its switch is on:

@@ -6,10 +6,9 @@
 #import "Redesigned/Player/Player.h"
 
 NSArray<SGModSection *> *SGRNowPlayingSections(void) {
-    return @[
+    return [@[
         SGSection(nil, @[
             SGHideRow(@"Hide the device button", nil, SGRHideBarConnect),
         ]),
-        SGSection(nil, SGRPlayerBackgroundRows()),
-    ];
+    ] arrayByAddingObjectsFromArray:SGRPlayerBackgroundSections()];
 }

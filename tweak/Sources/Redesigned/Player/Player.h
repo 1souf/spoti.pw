@@ -8,7 +8,7 @@
 //
 //     PlayerField.x      the switch's flags and rows, the field in the background plane, the cover it reads
 //     PlayerAnimated.x   Animated artwork: the Canvas or Apple Music's cover looping over the field
-//     PlayerBackgroundSettings.m  what moves behind the player, Fluid artwork's sliders and their page
+//     PlayerBackgroundSettings.m  what moves behind the player, and Fluid artwork's sliders under a preview
 //     PlayerArtwork.x    the cover's corners, shadow and paused shrink, the lyric preview under it hidden,
 //                        and every cover gone while an Animated artwork clip shows
 //     PlayerHeader.x     glass behind the close and more buttons
@@ -35,7 +35,7 @@
 #import <UIKit/UIKit.h>
 #import "Redesigned/Kit/SGRWarp.h"
 
-@class SGRArtworkField, SGModRow;
+@class SGRArtworkField, SGModSection;
 
 #pragma mark - the background (PlayerBackgroundSettings.m)
 
@@ -64,8 +64,8 @@ extern NSNotificationName const SGRPlayerBackgroundDidChangeNotification;
 SGRWarpLook SGRPlayerFluidLook(void);
 // Posted as a slider moves or the page resets them, so the player's field and the preview follow at once.
 extern NSNotificationName const SGRPlayerFluidLookDidChangeNotification;
-// The Player page's rows for the background, and the Fluid artwork page they open.
-NSArray<SGModRow *> *SGRPlayerBackgroundRows(void);
+// The Player page's sections for the background: the choice, then the settings of the one picked.
+NSArray<SGModSection *> *SGRPlayerBackgroundSections(void);
 
 #pragma mark - the ⋯ menu (PlayerMenu.x)
 
